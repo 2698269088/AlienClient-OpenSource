@@ -1,46 +1,93 @@
 package dev.luminous.core.impl;
 
 import dev.luminous.Alien;
-import dev.luminous.api.events.Event;
-import dev.luminous.api.events.eventbus.EventHandler;
+import dev.luminous.api.events.eventbus.EventListener;
 import dev.luminous.api.events.eventbus.EventPriority;
 import dev.luminous.api.events.impl.*;
 import dev.luminous.api.utils.Wrapper;
-import dev.luminous.api.utils.entity.EntityUtil;
 import dev.luminous.api.utils.math.MathUtil;
 import dev.luminous.api.utils.math.Timer;
-import dev.luminous.mod.modules.impl.client.BaritoneModule;
+import dev.luminous.api.utils.path.BaritoneUtil;
+import dev.luminous.asm.accessors.IClientPlayerEntity;
 import dev.luminous.mod.modules.impl.client.AntiCheat;
-import dev.luminous.mod.modules.impl.movement.MoveFix;
+import dev.luminous.mod.modules.impl.client.ClientSetting;
+import dev.luminous.mod.modules.impl.movement.HoleSnap;
+import dev.luminous.mod.modules.impl.player.Freecam;
+import dev.luminous.mod.modules.settings.enums.SnapBack;
 import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
-import net.minecraft.network.packet.s2c.play.PlayerPositionLookS2CPacket;
-import net.minecraft.network.packet.s2c.play.PositionFlag;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 
 public class RotationManager implements Wrapper {
+    public static final Timer ROTATE_TIMER = new Timer();
+    public static Vec3d directionVec = null;
+    public static boolean snapBack = false;
+    private static float renderPitch;
+    private static float renderYawOffset;
+    private static float prevRenderPitch;
+    private static float prevRenderYawOffset;
+    private static float prevRotationYawHead;
+    private static float rotationYawHead;
+    public float nextYaw;
+    public float nextPitch;
+    public float rotationYaw;
+    public float rotationPitch;
+    public float lastYaw;
+    public float lastPitch;
+    public Vec3d crossHairUpdatePos;
+    private int ticksExisted;
+
     public RotationManager() {
         Alien.EVENT_BUS.subscribe(this);
     }
-    public float nextYaw;
-    public float nextPitch;
-    public float rotationYaw = 0;
-    public float rotationPitch = 0;
-    public float lastYaw = 0;
-    public float lastPitch = 0;
-    public static final Timer ROTATE_TIMER = new Timer();
-    public static Vec3d directionVec = null;
-    public static boolean lastGround;
+
+    @EventListener
+    public void onInteract(InteractItemEvent event) {
+        if (AntiCheat.INSTANCE.interactRotation.getValue() && mc.player != null) {
+            if (event.isPre()) {
+                snapAt(mc.player.getYaw(), mc.player.getPitch());
+            } else {
+                snapBack();
+            }
+        }
+    }
+
+    @EventListener
+    public void onInteract(InteractBlockEvent event) {
+        if (AntiCheat.INSTANCE.interactRotation.getValue() && mc.player != null) {
+            if (event.isPre()) {
+                snapAt(mc.player.getYaw(), mc.player.getPitch());
+            } else {
+                snapBack();
+            }
+        }
+    }
+
+    @EventListener
+    public void doAttack(DoAttackEvent event) {
+        if (AntiCheat.INSTANCE.interactRotation.getValue() && mc.player != null) {
+            if (event.isPre()) {
+                snapAt(mc.player.getYaw(), mc.player.getPitch());
+            } else {
+                snapBack();
+            }
+        }
+    }
 
     public void snapBack() {
-        mc.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.Full(mc.player.getX(), mc.player.getY(), mc.player.getZ(), Alien.ROTATION.rotationYaw, Alien.ROTATION.rotationPitch, mc.player.isOnGround()));
+        if (AntiCheat.INSTANCE.snapBackEnum.is(SnapBack.Force)) {
+            mc.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.Full(mc.player.getX(), mc.player.getY(), mc.player.getZ(), rotationYaw, rotationPitch, mc.player.isOnGround()));
+        } else if (AntiCheat.INSTANCE.snapBackEnum.is(SnapBack.Tick))
+            snapBack = true;
     }
+
     public void lookAt(Vec3d directionVec) {
         rotationTo(directionVec);
         snapAt(directionVec);
     }
+
     public void lookAt(BlockPos pos, Direction side) {
         final Vec3d hitVec = pos.toCenterPos().add(new Vec3d(side.getVector().getX() * 0.5, side.getVector().getY() * 0.5, side.getVector().getZ() * 0.5));
         lookAt(hitVec);
@@ -57,26 +104,7 @@ public class RotationManager implements Wrapper {
 
     public void snapAt(Vec3d directionVec) {
         float[] angle = getRotation(directionVec);
-        if (AntiCheat.INSTANCE.noSpamRotation.getValue()) {
-            if (MathHelper.angleBetween(angle[0], Alien.ROTATION.lastYaw) < AntiCheat.INSTANCE.fov.getValueFloat() && Math.abs(angle[1] - Alien.ROTATION.lastPitch) < AntiCheat.INSTANCE.fov.getValueFloat()) {
-                return;
-            }
-        }
         snapAt(angle[0], angle[1]);
-    }
-
-    public float[] getRotation(Vec3d eyesPos, Vec3d vec) {
-        double diffX = vec.x - eyesPos.x;
-        double diffY = vec.y - eyesPos.y;
-        double diffZ = vec.z - eyesPos.z;
-        double diffXZ = Math.sqrt(diffX * diffX + diffZ * diffZ);
-        float yaw = (float) Math.toDegrees(Math.atan2(diffZ, diffX)) - 90.0f;
-        float pitch = (float) (-Math.toDegrees(Math.atan2(diffY, diffXZ)));
-        return new float[]{MathHelper.wrapDegrees(yaw), MathHelper.wrapDegrees(pitch)};
-    }
-    public float[] getRotation(Vec3d vec) {
-        Vec3d eyesPos = EntityUtil.getEyesPos();
-        return getRotation(eyesPos, vec);
     }
 
     public void rotationTo(Vec3d vec3d) {
@@ -85,66 +113,58 @@ public class RotationManager implements Wrapper {
     }
 
     public boolean inFov(Vec3d directionVec, float fov) {
-        float[] angle = getRotation(new Vec3d(mc.player.getX(), mc.player.getY() + mc.player.getEyeHeight(mc.player.getPose()), mc.player.getZ()), directionVec);
+        float[] angle = getRotation(crossHairUpdatePos != null ? crossHairUpdatePos : new Vec3d(mc.player.getX(), mc.player.getY() + mc.player.getEyeHeight(mc.player.getPose()), mc.player.getZ()), directionVec);
         return inFov(angle[0], angle[1], fov);
     }
 
     public boolean inFov(float yaw, float pitch, float fov) {
-        return MathHelper.angleBetween(yaw, rotationYaw) + Math.abs(pitch - rotationPitch) <= fov;
+        float yawDifferent = MathHelper.angleBetween(yaw, rotationYaw);
+        float pitchDifferent = Math.abs(pitch - rotationPitch);
+        return yawDifferent * yawDifferent + pitchDifferent * pitchDifferent <= fov * fov;
     }
 
-    @EventHandler
-    public void update(MovementPacketsEvent event) {
-        if (MoveFix.INSTANCE.isOn() && !BaritoneModule.isActive()) {
+    @EventListener
+    public void onTickMovement(TickMovementEvent event) {
+        if (mc.player == null) return;
+        crossHairUpdatePos = new Vec3d(mc.player.getX(), mc.player.getY() + mc.player.getEyeHeight(mc.player.getPose()), mc.player.getZ());
+    }
+
+    @EventListener
+    public void update(SendMovementPacketsEvent event) {
+        if (AntiCheat.INSTANCE.movementSync() && !BaritoneUtil.isActive()) {
             event.setYaw(nextYaw);
             event.setPitch(nextPitch);
         } else {
-            RotateEvent event1 = new RotateEvent(event.getYaw(), event.getPitch());
-            Alien.EVENT_BUS.post(event1);
-            event.setYaw(event1.getYaw());
-            event.setPitch(event1.getPitch());
+            UpdateRotateEvent updateRotateEvent = UpdateRotateEvent.get(event.getYaw(), event.getPitch());
+            Alien.EVENT_BUS.post(updateRotateEvent);
+            event.setYaw(updateRotateEvent.getYaw());
+            event.setPitch(updateRotateEvent.getPitch());
         }
     }
 
-    @EventHandler(priority = EventPriority.LOWEST)
-    public void update(UpdateWalkingPlayerEvent event) {
-        if (MoveFix.INSTANCE.isOn() && !MoveFix.INSTANCE.updateMode.is(MoveFix.UpdateMode.UpdateMouse) && !BaritoneModule.isActive()) {
-            if (event.isPost()) {
-                updateNext();
-            }
+    @EventListener(priority = 999)
+    public void update(TickMovementEvent event) {
+        if (mc.player == null) return;
+        if (AntiCheat.INSTANCE.movementSync() && !BaritoneUtil.isActive()) {
+            UpdateRotateEvent updateRotateEvent = UpdateRotateEvent.get(mc.player.getYaw(), mc.player.getPitch());
+            Alien.EVENT_BUS.post(updateRotateEvent);
+            nextYaw = updateRotateEvent.getYaw();
+            nextPitch = updateRotateEvent.getPitch();
+            fixYaw = nextYaw;
+            fixPitch = nextPitch;
         }
-    }
-    @EventHandler(priority = EventPriority.LOWEST)
-    public void update(MouseUpdateEvent event) {
-        if (mc.player != null && MoveFix.INSTANCE.isOn() && !MoveFix.INSTANCE.updateMode.is(MoveFix.UpdateMode.MovementPacket) && !BaritoneModule.isActive()) {
-            updateNext();
-        }
-    }
-    private void updateNext() {
-        RotateEvent rotateEvent = new RotateEvent(mc.player.getYaw(), mc.player.getPitch());
-        Alien.EVENT_BUS.post(rotateEvent);
-        if (rotateEvent.isModified()) {
-            nextYaw = rotateEvent.getYaw();
-            nextPitch = rotateEvent.getPitch();
-        } else {
-            float[] newAngle = injectStep(new float[]{rotateEvent.getYaw(), rotateEvent.getPitch()}, AntiCheat.INSTANCE.steps.getValueFloat());
-            nextYaw = newAngle[0];
-            nextPitch = newAngle[1];
-        }
-        MoveFix.fixRotation = nextYaw;
-        MoveFix.fixPitch = nextPitch;
     }
 
-    @EventHandler(priority = EventPriority.LOWEST)
-    public void onLastRotation(RotateEvent event) {
-        LookAtEvent lookAtEvent = new LookAtEvent();
-        Alien.EVENT_BUS.post(lookAtEvent);
-        if (lookAtEvent.getRotation()) {
-            float[] newAngle = injectStep(new float[]{lookAtEvent.getYaw(), lookAtEvent.getPitch()}, lookAtEvent.getSpeed());
+    @EventListener(priority = EventPriority.LOWEST)
+    public void onLastRotation(UpdateRotateEvent event) {
+        RotationEvent rotationEvent = RotationEvent.get();
+        Alien.EVENT_BUS.post(rotationEvent);
+        if (rotationEvent.getRotation()) {
+            float[] newAngle = injectStep(new float[]{rotationEvent.getYaw(), rotationEvent.getPitch()}, rotationEvent.getSpeed());
             event.setYaw(newAngle[0]);
             event.setPitch(newAngle[1]);
-        } else if (lookAtEvent.getTarget() != null) {
-            float[] newAngle = injectStep(lookAtEvent.getTarget(), lookAtEvent.getSpeed());
+        } else if (rotationEvent.getTarget() != null) {
+            float[] newAngle = injectStep(rotationEvent.getTarget(), rotationEvent.getSpeed());
             event.setYaw(newAngle[0]);
             event.setPitch(newAngle[1]);
         } else if (!event.isModified() && AntiCheat.INSTANCE.look.getValue()) {
@@ -155,16 +175,89 @@ public class RotationManager implements Wrapper {
             }
         }
     }
+
+    public static float fixYaw;
+    public static float fixPitch;
+
+    private float prevYaw;
+    private float prevPitch;
+
+    @EventListener
+    public void travel(TravelEvent e) {
+        if (!AntiCheat.INSTANCE.movementSync()) return;
+        if (BaritoneUtil.isActive()) return;
+        if (mc.player.isRiding())
+            return;
+
+        if (e.isPre()) {
+            prevYaw = mc.player.getYaw();
+            prevPitch = mc.player.getPitch();
+            mc.player.setYaw(fixYaw);
+            mc.player.setPitch(fixPitch);
+        } else {
+            mc.player.setYaw(prevYaw);
+            mc.player.setPitch(prevPitch);
+        }
+    }
+
+    @EventListener
+    public void onJump(JumpEvent e) {
+        if (!AntiCheat.INSTANCE.movementSync()) return;
+        if (BaritoneUtil.isActive()) return;
+        if (mc.player.isRiding())
+            return;
+
+        if (e.isPre()) {
+            prevYaw = mc.player.getYaw();
+            prevPitch = mc.player.getPitch();
+            mc.player.setYaw(fixYaw);
+            mc.player.setPitch(fixPitch);
+        } else {
+            mc.player.setYaw(prevYaw);
+            mc.player.setPitch(prevPitch);
+        }
+    }
+
+    @EventListener
+    public void onFirework(FireworkShooterRotationEvent event) {
+        if (!AntiCheat.INSTANCE.movementSync()) return;
+        if (BaritoneUtil.isActive()) return;
+        if (event.shooter == mc.player) {
+            event.yaw = fixYaw;
+            event.pitch = fixPitch;
+            event.cancel();
+        }
+    }
+
+    @EventListener(priority = -999)
+    public void onKeyInput(KeyboardInputEvent e) {
+        if (!AntiCheat.INSTANCE.movementSync()) return;
+        if (BaritoneUtil.isActive()) return;
+        if (HoleSnap.INSTANCE.isOn()) return;
+        if (mc.player.isRiding() || Freecam.INSTANCE.isOn())
+            return;
+
+        float mF = mc.player.input.movementForward;
+        float mS = mc.player.input.movementSideways;
+        float delta = (mc.player.getYaw() - fixYaw) * MathHelper.RADIANS_PER_DEGREE;
+        float cos = MathHelper.cos(delta);
+        float sin = MathHelper.sin(delta);
+        mc.player.input.movementSideways = Math.round(mS * cos - mF * sin);
+        mc.player.input.movementForward = Math.round(mF * cos + mS * sin);
+    }
+
     public float[] injectStep(Vec3d vec, float steps) {
-        float currentYaw = AntiCheat.INSTANCE.forceSync.getValue() ? lastYaw : rotationYaw;
-        float currentPitch = AntiCheat.INSTANCE.forceSync.getValue() ? lastPitch : rotationPitch;
+        float currentYaw = AntiCheat.INSTANCE.serverSide.getValue() ? getLastYaw() : rotationYaw;
+        float currentPitch = AntiCheat.INSTANCE.serverSide.getValue() ? getLastPitch() : rotationPitch;
 
         float yawDelta = MathHelper.wrapDegrees((float) MathHelper.wrapDegrees(Math.toDegrees(Math.atan2(vec.z - mc.player.getZ(), (vec.x - mc.player.getX()))) - 90) - currentYaw);
         float pitchDelta = ((float) (-Math.toDegrees(Math.atan2(vec.y - (mc.player.getPos().y + mc.player.getEyeHeight(mc.player.getPose())), Math.sqrt(Math.pow((vec.x - mc.player.getX()), 2) + Math.pow(vec.z - mc.player.getZ(), 2))))) - currentPitch);
 
-        float angleToRad = (float) Math.toRadians(27 * (mc.player.age % 30));
-        yawDelta = (float) (yawDelta + Math.sin(angleToRad) * 3) + MathUtil.random(-1f, 1f);
-        pitchDelta = pitchDelta + MathUtil.random(-0.6f, 0.6f);
+        if (AntiCheat.INSTANCE.random.getValue()) {
+            float angleToRad = (float) Math.toRadians(27 * (mc.player.age % 30));
+            yawDelta = (float) (yawDelta + Math.sin(angleToRad) * 3) + MathUtil.random(-1, 1);
+            pitchDelta = pitchDelta + MathUtil.random(-0.6f, 0.6f);
+        }
 
         if (yawDelta > 180)
             yawDelta = yawDelta - 180;
@@ -177,71 +270,55 @@ public class RotationManager implements Wrapper {
         float newYaw = currentYaw + (yawDelta > 0 ? clampedYawDelta : -clampedYawDelta);
         float newPitch = MathHelper.clamp(currentPitch + clampedPitchDelta, -90.0F, 90.0F);
 
-        double gcdFix = (Math.pow(mc.options.getMouseSensitivity().getValue() * 0.6 + 0.2, 3.0)) * 1.2;
-
-        return new float[]{(float) (newYaw - (newYaw - currentYaw) % gcdFix), (float) (newPitch - (newPitch - currentPitch) % gcdFix)};
+        return new float[]{newYaw, newPitch};
     }
 
     public float[] injectStep(float[] angle, float steps) {
-        if (steps < 0.01f) steps = 0.01f;
-        if (steps > 1) steps = 1;
-        if (steps < 1 && angle != null) {
-            float packetYaw = AntiCheat.INSTANCE.forceSync.getValue() ? lastYaw : rotationYaw;
-            float diff = MathHelper.angleBetween(angle[0], packetYaw);
-            if (Math.abs(diff) > 180 * steps) {
-                angle[0] = (packetYaw + (diff * ((180 * steps) / Math.abs(diff))));
-            }
-            float packetPitch = AntiCheat.INSTANCE.forceSync.getValue() ? lastPitch : rotationPitch;
-            diff = angle[1] - packetPitch;
-            if (Math.abs(diff) > 90 * steps) {
-                angle[1] = (packetPitch + (diff * ((90 * steps) / Math.abs(diff))));
-            }
+        float currentYaw = AntiCheat.INSTANCE.serverSide.getValue() ? getLastYaw() : rotationYaw;
+        float currentPitch = AntiCheat.INSTANCE.serverSide.getValue() ? getLastPitch() : rotationPitch;
+
+        float yawDelta = MathHelper.wrapDegrees(angle[0] - currentYaw);
+        float pitchDelta = (angle[1] - currentPitch);
+
+        if (AntiCheat.INSTANCE.random.getValue()) {
+            float angleToRad = (float) Math.toRadians(27 * (mc.player.age % 30));
+            yawDelta = (float) (yawDelta + Math.sin(angleToRad) * 3) + MathUtil.random(-1, 1);
+            pitchDelta = pitchDelta + MathUtil.random(-0.6f, 0.6f);
         }
-        return new float[]{angle[0], angle[1]};
+
+        if (yawDelta > 180)
+            yawDelta = yawDelta - 180;
+
+        float yawStepVal = 180 * steps;
+        float pitchStepVal = 90 * steps;
+
+        float clampedYawDelta = MathHelper.clamp(MathHelper.abs(yawDelta), -yawStepVal, yawStepVal);
+        float clampedPitchDelta = MathHelper.clamp(pitchDelta, -pitchStepVal, pitchStepVal);
+
+        float newYaw = currentYaw + (yawDelta > 0 ? clampedYawDelta : -clampedYawDelta);
+        float newPitch = MathHelper.clamp(currentPitch + clampedPitchDelta, -90.0F, 90.0F);
+
+        return new float[]{newYaw, newPitch};
     }
-    @EventHandler(priority = -999)
-    public void onPacketSend(PacketEvent.Send event) {
-        if (mc.player == null || event.isCancelled()) return;
+
+    @EventListener(priority = -999)
+    public void onPacketSend(PacketEvent.Sent event) {
+        if (mc.player == null) return;
         if (event.getPacket() instanceof PlayerMoveC2SPacket packet) {
             if (packet.changesLook()) {
-                lastYaw = packet.getYaw(lastYaw);
-                lastPitch = packet.getPitch(lastPitch);
-                setRenderRotation(lastYaw, lastPitch, false);
+                setLastYaw(packet.getYaw(getLastYaw()));
+                setLastPitch(packet.getPitch(getLastPitch()));
+                setRenderRotation(getLastYaw(), getLastPitch(), ClientSetting.INSTANCE.sync.getValue());
             }
-            lastGround = packet.isOnGround();
         }
     }
-    private static float renderPitch;
-    private static float renderYawOffset;
-    private static float prevPitch;
-    private static float prevRenderYawOffset;
-    private static float prevRotationYawHead;
-    private static float rotationYawHead;
-    private int ticksExisted;
 
-    @EventHandler(priority = EventPriority.HIGH)
-    public void onReceivePacket(PacketEvent.Receive event) {
-        if (mc.player == null) return;
-        if (event.getPacket() instanceof PlayerPositionLookS2CPacket packet) {
-            if (packet.getFlags().contains(PositionFlag.X_ROT)) {
-                lastYaw = lastYaw + packet.getYaw();
-            } else {
-                lastYaw = packet.getYaw();
-            }
+    @EventListener
+    public void onUpdateWalkingPost(TickEvent event) {
+        if (event.isPost())
+            setRenderRotation(getLastYaw(), getLastPitch(), false);
+    }
 
-            if (packet.getFlags().contains(PositionFlag.Y_ROT)) {
-                lastPitch = lastPitch + packet.getPitch();
-            } else {
-                lastPitch = packet.getPitch();
-            }
-            setRenderRotation(lastYaw, lastPitch, true);
-        }
-    }
-    @EventHandler
-    public void onUpdateWalkingPost(UpdateWalkingPlayerEvent event) {
-        if (event.getStage() == Event.Stage.Post)
-            setRenderRotation(lastYaw, lastPitch, false);
-    }
     public void setRenderRotation(float yaw, float pitch, boolean force) {
         if (mc.player == null) return;
         if (mc.player.age == ticksExisted && !force) {
@@ -249,7 +326,7 @@ public class RotationManager implements Wrapper {
         }
 
         ticksExisted = mc.player.age;
-        prevPitch = renderPitch;
+        prevRenderPitch = renderPitch;
 
         prevRenderYawOffset = renderYawOffset;
         renderYawOffset = getRenderYawOffset(yaw, prevRenderYawOffset);
@@ -258,30 +335,6 @@ public class RotationManager implements Wrapper {
         rotationYawHead = yaw;
 
         renderPitch = pitch;
-    }
-
-    public static float getRenderPitch() {
-        return renderPitch;
-    }
-
-    public static float getRotationYawHead() {
-        return rotationYawHead;
-    }
-
-    public static float getRenderYawOffset() {
-        return renderYawOffset;
-    }
-
-    public static float getPrevPitch() {
-        return prevPitch;
-    }
-
-    public static float getPrevRotationYawHead() {
-        return prevRotationYawHead;
-    }
-
-    public static float getPrevRenderYawOffset() {
-        return prevRenderYawOffset;
     }
 
     private float getRenderYawOffset(float yaw, float offsetIn) {
@@ -320,5 +373,66 @@ public class RotationManager implements Wrapper {
         }
 
         return result;
+    }
+
+    public static float[] getRotation(Vec3d eyesPos, Vec3d vec) {
+        double diffX = vec.x - eyesPos.x;
+        double diffY = vec.y - eyesPos.y;
+        double diffZ = vec.z - eyesPos.z;
+        double diffXZ = Math.sqrt(diffX * diffX + diffZ * diffZ);
+        float yaw = (float) Math.toDegrees(Math.atan2(diffZ, diffX)) - 90.0f;
+        float pitch = (float) (-Math.toDegrees(Math.atan2(diffY, diffXZ)));
+        return new float[]{MathHelper.wrapDegrees(yaw), MathHelper.wrapDegrees(pitch)};
+    }
+
+    public static float[] getRotation(Vec3d vec) {
+        Vec3d eyesPos = mc.player.getEyePos();
+        return getRotation(eyesPos, vec);
+    }
+
+    public static float getRenderPitch() {
+        return renderPitch;
+    }
+
+    public static float getRotationYawHead() {
+        return rotationYawHead;
+    }
+
+    public static float getRenderYawOffset() {
+        return renderYawOffset;
+    }
+
+    public static float getPrevRenderPitch() {
+        return prevRenderPitch;
+    }
+
+    public static float getPrevRotationYawHead() {
+        return prevRotationYawHead;
+    }
+
+    public static float getPrevRenderYawOffset() {
+        return prevRenderYawOffset;
+    }
+
+    public float getLastYaw() {
+        return lastYaw;
+    }
+
+    public void setLastYaw(float lastYaw) {
+        this.lastYaw = lastYaw;
+        if (AntiCheat.INSTANCE.forceSync.getValue() && Alien.SERVER.playerNull.passedS(0.15)) {
+            ((IClientPlayerEntity) mc.player).setLastYaw(lastYaw);
+        }
+    }
+
+    public float getLastPitch() {
+        return lastPitch;
+    }
+
+    public void setLastPitch(float lastPitch) {
+        this.lastPitch = lastPitch;
+        if (AntiCheat.INSTANCE.forceSync.getValue() && Alien.SERVER.playerNull.passedS(0.15)) {
+            ((IClientPlayerEntity) mc.player).setLastPitch(lastPitch);
+        }
     }
 }

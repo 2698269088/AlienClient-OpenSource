@@ -6,7 +6,6 @@ in vec2 texCoord;
 in vec2 oneTexel;
 out vec4 fragColor;
 
-uniform vec2 InSize;
 uniform float alpha1;
 
 uniform float quality;
@@ -69,7 +68,6 @@ float fbm( in vec2 _st) {
     return v;
 }
 
-
 vec3 getColor(vec4 centerCol) {
     vec2 st = gl_FragCoord.xy / resolution.xy*3.;
     vec3 color = vec3(0.0);
@@ -96,7 +94,6 @@ void main() {
         fragColor = vec4(getColor(centerCol), glowShader());
     }
 }
-
 
 
 

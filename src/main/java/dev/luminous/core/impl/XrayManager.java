@@ -3,7 +3,7 @@ package dev.luminous.core.impl;
 import dev.luminous.Alien;
 import dev.luminous.core.Manager;
 import dev.luminous.mod.modules.Module;
-import dev.luminous.mod.modules.impl.render.XRay;
+import dev.luminous.mod.modules.impl.render.Xray;
 import net.minecraft.block.Blocks;
 import org.apache.commons.io.IOUtils;
 
@@ -13,24 +13,38 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class XrayManager extends Manager {
+    private final ArrayList<String> list = new ArrayList<>();
+
     public XrayManager() {
         read();
     }
-    public final ArrayList<String> list = new ArrayList<>();
-    public boolean inWhitelist(String name) {
-        return list.contains(name);
+
+    public ArrayList<String> getList() {
+        return list;
     }
+
+    public boolean inWhitelist(String name) {
+        return list.contains(name) || list.contains(name.replace("block.minecraft.", "").replace("item.minecraft.", ""));
+    }
+
+    public void clear() {
+        list.clear();
+    }
+
     public void remove(String name) {
+        name = name.replace("block.minecraft.", "").replace("item.minecraft.", "");
         if (list.remove(name)) {
-            if (!Module.nullCheck() && XRay.INSTANCE.isOn()) {
+            if (!Module.nullCheck() && Xray.INSTANCE.isOn()) {
                 mc.worldRenderer.reload();
             }
         }
     }
+
     public void add(String name) {
+        name = name.replace("block.minecraft.", "").replace("item.minecraft.", "");
         if (!list.contains(name)) {
             list.add(name);
-            if (!Module.nullCheck() && XRay.INSTANCE.isOn()) {
+            if (!Module.nullCheck() && Xray.INSTANCE.isOn()) {
                 mc.worldRenderer.reload();
             }
         }
@@ -59,15 +73,15 @@ public class XrayManager extends Manager {
                 return;
             }
             List<String> list = IOUtils.readLines(new FileInputStream(friendFile), StandardCharsets.UTF_8);
-            
+
             for (String s : list) {
                 add(s);
             }
-        } catch (IOException exception) {
-            exception.printStackTrace();
+        } catch (Exception e) {
+            e.printStackTrace();
         }
     }
-    
+
     public void save() {
         try {
             File friendFile = getFile("xrays.txt");

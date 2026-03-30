@@ -13,6 +13,7 @@ public interface IEntity {
     @Mutable
     @Accessor("pos")
     void setPos(Vec3d pos);
+
     @Accessor("dimensions")
     EntityDimensions getDimensions();
 }

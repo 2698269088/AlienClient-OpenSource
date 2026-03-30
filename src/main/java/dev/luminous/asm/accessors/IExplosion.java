@@ -1,6 +1,7 @@
 package dev.luminous.asm.accessors;
 
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.damage.DamageSource;
 import net.minecraft.world.World;
 import net.minecraft.world.explosion.Explosion;
 import org.spongepowered.asm.mixin.Mixin;
@@ -20,6 +21,7 @@ public interface IExplosion {
     @Mutable
     @Accessor("z")
     void setZ(double z);
+
     @Mutable
     @Accessor("power")
     void setPower(float power);
@@ -30,9 +32,13 @@ public interface IExplosion {
 
     @Mutable
     @Accessor("world")
-    void setWorld(World world);
+    World getWorld();
 
     @Mutable
     @Accessor("world")
-    World getWorld();
+    void setWorld(World world);
+
+    @Mutable
+    @Accessor("damageSource")
+    DamageSource getDamageSource();
 }

@@ -1,16 +1,19 @@
 package dev.luminous.asm.mixins;
 
 import dev.luminous.Alien;
-import dev.luminous.mod.modules.impl.player.InteractTweaks;
 import dev.luminous.api.events.impl.ClickBlockEvent;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayNetworkHandler;
+import dev.luminous.api.events.impl.InteractBlockEvent;
+import dev.luminous.api.events.impl.InteractItemEvent;
+import dev.luminous.mod.modules.impl.player.InteractTweaks;
+import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.network.ClientPlayerInteractionManager;
+import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
-import net.minecraft.network.packet.c2s.play.UpdateSelectedSlotC2SPacket;
+import net.minecraft.util.ActionResult;
+import net.minecraft.util.Hand;
+import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
-import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.*;
@@ -20,61 +23,59 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(ClientPlayerInteractionManager.class)
 public class MixinClientPlayerInteractionManager {
 
-	@Shadow
-	private ItemStack selectedStack;
+    @Shadow
+    private ItemStack selectedStack;
 
-	@ModifyVariable(method = "isCurrentlyBreaking", at = @At("STORE"))
-	private ItemStack stack(ItemStack stack) {
-		return InteractTweaks.INSTANCE.noReset() ? this.selectedStack : stack;
-	}
+    @ModifyVariable(method = "isCurrentlyBreaking", at = @At("STORE"))
+    private ItemStack stack(ItemStack stack) {
+        return InteractTweaks.INSTANCE.noReset() ? this.selectedStack : stack;
+    }
 
-	@ModifyConstant(method = "updateBlockBreakingProgress", constant = @Constant(intValue = 5))
-	private int MiningCooldownFix(int value) {
-		return InteractTweaks.INSTANCE.noDelay() ? 0 : value;
-	}
+    @ModifyConstant(method = "updateBlockBreakingProgress", constant = @Constant(intValue = 5))
+    private int MiningCooldownFix(int value) {
+        return InteractTweaks.INSTANCE.noDelay() ? 0 : value;
+    }
 
-	@Inject(method = "cancelBlockBreaking", at = @At("HEAD"), cancellable = true)
-	private void hookCancelBlockBreaking(CallbackInfo callbackInfo) {
-		if (InteractTweaks.INSTANCE.noAbort())
-			callbackInfo.cancel();
-	}
-	@Inject(at = { @At("HEAD") }, method = { "getReachDistance()F" }, cancellable = true)
-	private void onGetReachDistance(CallbackInfoReturnable<Float> ci) {
-		if (InteractTweaks.INSTANCE.reach()) {
-			ci.setReturnValue(InteractTweaks.INSTANCE.distance.getValueFloat());
-		}
-	}
+    @Inject(method = "interactItem", at = @At("HEAD"), cancellable = true)
+    private void hookInteractItem(PlayerEntity player, Hand hand, CallbackInfoReturnable<ActionResult> cir) {
+        InteractItemEvent event = InteractItemEvent.getPre(hand);
+        Alien.EVENT_BUS.post(event);
+        if (event.isCancelled()) {
+            cir.setReturnValue(ActionResult.PASS);
+        }
+    }
 
-	@Shadow
-	private int lastSelectedSlot;
-	@Final
-	@Shadow
-	private MinecraftClient client;
-	@Final
-	@Shadow
-	private ClientPlayNetworkHandler networkHandler;
+    @Inject(method = "interactItem", at = @At("RETURN"))
+    private void hookInteractItemReturn(PlayerEntity player, Hand hand, CallbackInfoReturnable<ActionResult> cir) {
+        Alien.EVENT_BUS.post(InteractItemEvent.getPost(hand));
+    }
 
-	@Inject(at = { @At("HEAD") }, method = { "syncSelectedSlot" }, cancellable = true)
-	private void syncSlotHook(CallbackInfo ci) {
-		ci.cancel();
-		int i = this.client.player.getInventory().selectedSlot;
-		if (i != Alien.SERVER.serverSideSlot) {
-			this.lastSelectedSlot = i;
-			this.networkHandler.sendPacket(new UpdateSelectedSlotC2SPacket(this.lastSelectedSlot));
-		}
-	}
-	@Inject(at = { @At("HEAD") }, method = { "hasExtendedReach()Z" }, cancellable = true)
-	private void hasExtendedReach(CallbackInfoReturnable<Boolean> cir) {
-		if (InteractTweaks.INSTANCE.reach())
-			cir.setReturnValue(true);
-	}
+    @Inject(method = "interactBlock", at = @At("HEAD"), cancellable = true)
+    private void hookInteractBlock(ClientPlayerEntity player, Hand hand, BlockHitResult hitResult, CallbackInfoReturnable<ActionResult> cir) {
+        InteractBlockEvent event = InteractBlockEvent.getPre(hand);
+        Alien.EVENT_BUS.post(event);
+        if (event.isCancelled()) {
+            cir.setReturnValue(ActionResult.PASS);
+        }
+    }
 
-	@Inject(method = "attackBlock", at = @At("HEAD"), cancellable = true)
-	private void onAttackBlock(BlockPos pos, Direction direction, CallbackInfoReturnable<Boolean> cir) {
-		ClickBlockEvent event = new ClickBlockEvent(pos, direction);
-		Alien.EVENT_BUS.post(event);
-		if (event.isCancelled()) {
-			cir.setReturnValue(false);
-		}
-	}
+    @Inject(method = "interactBlock", at = @At("RETURN"))
+    private void hookInteractBlockReturn(ClientPlayerEntity player, Hand hand, BlockHitResult hitResult, CallbackInfoReturnable<ActionResult> cir) {
+        Alien.EVENT_BUS.post(InteractBlockEvent.getPost(hand));
+    }
+
+    @Inject(method = "cancelBlockBreaking", at = @At("HEAD"), cancellable = true)
+    private void hookCancelBlockBreaking(CallbackInfo callbackInfo) {
+        if (InteractTweaks.INSTANCE.noAbort())
+            callbackInfo.cancel();
+    }
+
+    @Inject(method = "attackBlock", at = @At("HEAD"), cancellable = true)
+    private void onAttackBlock(BlockPos pos, Direction direction, CallbackInfoReturnable<Boolean> cir) {
+        ClickBlockEvent event = ClickBlockEvent.get(pos, direction);
+        Alien.EVENT_BUS.post(event);
+        if (event.isCancelled()) {
+            cir.setReturnValue(false);
+        }
+    }
 }

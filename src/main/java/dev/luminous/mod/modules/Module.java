@@ -2,7 +2,6 @@ package dev.luminous.mod.modules;
 
 import dev.luminous.Alien;
 import dev.luminous.core.impl.CommandManager;
-import dev.luminous.core.impl.ModuleManager;
 import dev.luminous.mod.Mod;
 import dev.luminous.mod.modules.impl.client.*;
 import dev.luminous.mod.modules.settings.Setting;
@@ -19,262 +18,290 @@ import java.util.List;
 
 public abstract class Module extends Mod {
 
-	public Module(String name, Category category) {
-		this(name, "", category);
-	}
+    public final BooleanSetting drawn;
+    private final List<Setting> settings = new ArrayList<>();
+    private final String description;
+    private final Category category;
+    private final BindSetting bindSetting;
+    protected boolean state;
+    private String chinese;
 
-	public Module(String name, String description, Category category) {
-		super(name);
-		this.category = category;
-		this.description = description;
-		ModuleManager.lastLoadMod = this;
-		bindSetting = new BindSetting("Key", isGui() ? GLFW.GLFW_KEY_Y : -1);
-		drawnSetting = add(new BooleanSetting("Drawn", !listHide()));
-		drawnSetting.hide();
-	}
-	private boolean isGui() {
-		return this instanceof ClickGui;
-	}
+    public Module(String name, Category category) {
+        this(name, "", category);
+    }
 
-	private boolean listHide() {
-		return this instanceof Colors || this instanceof BaritoneModule || this instanceof AntiCheat || this instanceof ClientSetting || this instanceof ServerApply || this instanceof HUD || this instanceof ModuleList;
-	}
-	private String description;
-	private final Category category;
-	private final BindSetting bindSetting;
-	public final BooleanSetting drawnSetting;
-	public boolean state;
+    public Module(String name, String description, Category category) {
+        super(name);
+        this.category = category;
+        this.description = description;
+        this.bindSetting = add(new BindSetting("Key", isGuiModule() ? GLFW.GLFW_KEY_RIGHT_SHIFT : -1));
+        this.drawn = add(new BooleanSetting("Drawn", !hideInModuleList()));
+    }
 
-	public String chinese;
+    private boolean isGuiModule() {
+        return this instanceof ClickGui;
+    }
 
-	public static void sendSequencedPacket(SequencedPacketCreator packetCreator) {
-		if (mc.getNetworkHandler() == null || mc.world == null) return;
-		try (PendingUpdateManager pendingUpdateManager = mc.world.getPendingUpdateManager().incrementSequence()) {
-			int i = pendingUpdateManager.getSequence();
-			mc.getNetworkHandler().sendPacket(packetCreator.predict(i));
-		}
-	}
+    private boolean hideInModuleList() {
+        return this instanceof ColorsModule || this instanceof BaritoneModule || this instanceof AntiCheat || this instanceof ClientSetting || this instanceof HUD;
+    }
 
+    public void setChinese(String chinese) {
+        this.chinese = chinese;
+    }
 
-	public void setChinese(String chinese) {
-		this.chinese = chinese;
-	}
+    public String getArrayName() {
+        return getDisplayName() + getArrayInfo();
+    }
 
-	public String getDisplayName() {
-		if (ClickGui.INSTANCE.chinese.getValue() && chinese != null) {
-			return chinese;
-		}
-		return getName();
-	}
+    public String getArrayInfo() {
+        return (getInfo() == null ? "" : " §7[§f" + getInfo() + "§7]");
+    }
 
+    public String getInfo() {
+        return null;
+    }
 
-	private final List<Setting> settings = new ArrayList<>();
+    public String getDisplayName() {
+        if (ClientSetting.INSTANCE.chinese.getValue() && chinese != null) {
+            return chinese;
+        }
+        return getName();
+    }
 
-	public String getDescription() {
-		return this.description;
-	}
+    public String getDescription() {
+        return this.description;
+    }
 
-	public void setDescription(String description) {
-		this.description = description;
-	}
+    public Module.Category getCategory() {
+        return this.category;
+    }
 
-	public Module.Category getCategory() {
-		return this.category;
-	}
+    public BindSetting getBindSetting() {
+        return this.bindSetting;
+    }
 
-	public BindSetting getBind() {
-		return this.bindSetting;
-	}
-	public boolean isOn() {
-		return this.state;
-	}
+    public boolean isOn() {
+        return this.state;
+    }
 
-	public boolean isOff() {
-		return !isOn();
-	}
+    public boolean isOff() {
+        return !isOn();
+    }
 
-	public void toggle() {
-		if (this.isOn()) {
-			disable();
-		} else {
-			enable();
-		}
-	}
+    public void toggle() {
+        if (this.isOn()) {
+            disable();
+        } else {
+            enable();
+        }
+    }
 
-	public void enable() {
-		if (this.state) return;
-		if (!nullCheck() && drawnSetting.getValue() && ClientSetting.INSTANCE.toggle.getValue()) {
-			int id = ClientSetting.INSTANCE.onlyOne.getValue() ? -1 : hashCode();
-			switch (ClientSetting.INSTANCE.messageStyle.getValue()) {
-				case Mio -> CommandManager.sendChatMessageWidthId("§2[+] §f" + getDisplayName(), id);
-				case Debug -> CommandManager.sendChatMessageWidthId(getCategory().name().toLowerCase() + "." + getDisplayName().toLowerCase() + ".§aenable", id);
-				case Lowercase -> CommandManager.sendChatMessageWidthId(getDisplayName().toLowerCase() + " §aenabled", id);
-				case Melon -> CommandManager.sendChatMessageWidthId("§b" + getDisplayName() + " §aEnabled.", id);
-				case Normal -> CommandManager.sendChatMessageWidthId("§f" + getDisplayName() + " §aEnabled", id);
-				case Future -> CommandManager.sendChatMessageWidthId("§7" + getDisplayName() + " toggled §aon", id);
-				case Chinese -> CommandManager.sendChatMessageWidthId(getDisplayName() + " §a开启", id);
-				case Moon -> CommandManager.sendChatMessageWidthIdNoSync("§f[§b" + ClientSetting.INSTANCE.hackName.getValue() + "§f] [" + "§3" + getDisplayName() + "§f]" + " §7toggled §aon", id);
-				case Earth -> CommandManager.sendChatMessageWidthIdNoSync("§l" + getDisplayName() + " §aenabled.", id);
-			}
-		}
-		this.state = true;
-		Alien.EVENT_BUS.subscribe(this);
-		this.onToggle();
-		try {
-			this.onEnable();
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
-	}
+    public void enable() {
+        if (this.state) return;
+        if (!nullCheck() && drawn.getValue()) {
+            if (ClientSetting.INSTANCE.toggle.getValue()) {
+                int id = ClientSetting.INSTANCE.onlyOne.getValue() ? -1 : hashCode();
+                switch (ClientSetting.INSTANCE.messageStyle.getValue()) {
+                    case Mio -> CommandManager.sendMessageId("§2[+] §f" + getDisplayName(), id);
+                    case Debug ->
+                            CommandManager.sendMessageId(getCategory().name().toLowerCase() + "." + getDisplayName().toLowerCase() + ".§aenable", id);
+                    case Lowercase -> CommandManager.sendMessageId(getDisplayName().toLowerCase() + " §aenabled", id);
+                    case Melon -> CommandManager.sendMessageId("§b" + getDisplayName() + " §aEnabled.", id);
+                    case Normal -> CommandManager.sendMessageId("§f" + getDisplayName() + " §aEnabled", id);
+                    case Future -> CommandManager.sendMessageId("§7" + getDisplayName() + " toggled §aon", id);
+                    case Chinese -> CommandManager.sendMessageId(getDisplayName() + " §a开启", id);
+                    case Moon ->
+                            CommandManager.sendChatMessageWidthIdNoSync("§f[§b" + ClientSetting.INSTANCE.hackName.getValue() + "§f] [" + "§3" + getDisplayName() + "§f]" + " §7toggled §aon", id);
+                    case Earth ->
+                            CommandManager.sendChatMessageWidthIdNoSync("§l" + getDisplayName() + " §aenabled.", id);
+                }
+            }
+        }
+        this.state = true;
+        Alien.EVENT_BUS.subscribe(this);
+        this.onToggle();
+        this.onEnable();
+    }
 
-	public void disable() {
-		if (!this.state) return;
-		if (!nullCheck() && drawnSetting.getValue() && ClientSetting.INSTANCE.toggle.getValue()) {
-			int id = ClientSetting.INSTANCE.onlyOne.getValue() ? -1 : hashCode();
-			switch (ClientSetting.INSTANCE.messageStyle.getValue()) {
-				case Mio -> CommandManager.sendChatMessageWidthId("§4[-] §f" + getDisplayName(), id);
-				case Debug -> CommandManager.sendChatMessageWidthId(getCategory().name().toLowerCase() + "." + getDisplayName().toLowerCase() + ".§cdisable", id);
-				case Lowercase -> CommandManager.sendChatMessageWidthId(getDisplayName().toLowerCase() + " §cdisabled", id);
-				case Normal -> CommandManager.sendChatMessageWidthId("§f" + getDisplayName() + " §cDisabled", id);
-				case Melon -> CommandManager.sendChatMessageWidthId("§b" + getDisplayName() + " §cDisabled.", id);
-				case Future -> CommandManager.sendChatMessageWidthId("§7" + getDisplayName() + " toggled §coff", id);
-				case Earth -> CommandManager.sendChatMessageWidthIdNoSync("§l" + getDisplayName() + " §cdisabled.", id);
-				case Chinese -> CommandManager.sendChatMessageWidthId(getDisplayName().toLowerCase() + " §c关闭", id);
-				case Moon -> CommandManager.sendChatMessageWidthIdNoSync("§f[§b" + ClientSetting.INSTANCE.hackName.getValue() + "§f] [" + "§3" + getDisplayName() + "§f]" + " §7toggled §coff", id);
-			}
-		}
-		this.state = false;
-		Alien.EVENT_BUS.unsubscribe(this);
-		this.onToggle();
-		this.onDisable();
-	}
-	public void setState(boolean state) {
-		if (this.state == state) return;
-		if (state) {
-			enable();
-		} else {
-			disable();
-		}
-	}
+    public void disable() {
+        if (!this.state) return;
+        if (!nullCheck() && drawn.getValue()) {
+            if (ClientSetting.INSTANCE.toggle.getValue()) {
+                int id = ClientSetting.INSTANCE.onlyOne.getValue() ? -1 : hashCode();
+                switch (ClientSetting.INSTANCE.messageStyle.getValue()) {
+                    case Mio -> CommandManager.sendMessageId("§4[-] §f" + getDisplayName(), id);
+                    case Debug ->
+                            CommandManager.sendMessageId(getCategory().name().toLowerCase() + "." + getDisplayName().toLowerCase() + ".§cdisable", id);
+                    case Lowercase -> CommandManager.sendMessageId(getDisplayName().toLowerCase() + " §cdisabled", id);
+                    case Normal -> CommandManager.sendMessageId("§f" + getDisplayName() + " §cDisabled", id);
+                    case Melon -> CommandManager.sendMessageId("§b" + getDisplayName() + " §cDisabled.", id);
+                    case Future -> CommandManager.sendMessageId("§7" + getDisplayName() + " toggled §coff", id);
+                    case Earth ->
+                            CommandManager.sendChatMessageWidthIdNoSync("§l" + getDisplayName() + " §cdisabled.", id);
+                    case Chinese -> CommandManager.sendMessageId(getDisplayName() + " §c关闭", id);
+                    case Moon ->
+                            CommandManager.sendChatMessageWidthIdNoSync("§f[§b" + ClientSetting.INSTANCE.hackName.getValue() + "§f] [" + "§3" + getDisplayName() + "§f]" + " §7toggled §coff", id);
+                }
+            }
+        }
+        this.state = false;
+        Alien.EVENT_BUS.unsubscribe(this);
+        this.onToggle();
+        this.onDisable();
+    }
 
-	public boolean setBind(String rkey) {
-		if (rkey.equalsIgnoreCase("none")) {
-			this.bindSetting.setKey(-1);
-			return true;
-		}
-		int key;
-		try {
-			key = InputUtil.fromTranslationKey("key.keyboard." + rkey.toLowerCase()).getCode();
-		} catch (NumberFormatException e) {
-			if (!nullCheck()) CommandManager.sendChatMessage("§cBad key!");
-			return false;
-		}
-		if (rkey.equalsIgnoreCase("none")) {
-			key = -1;
-		}
-		if (key == 0) {
-			return false;
-		}
-		this.bindSetting.setKey(key);
-		return true;
-	}
+    public void sendMessage(String message) {
+        CommandManager.sendMessage(message);
+    }
 
-	public void addSetting(Setting setting) {
-		this.settings.add(setting);
-	}
+    public void setState(boolean state) {
+        if (this.state == state) return;
+        if (state) {
+            enable();
+        } else {
+            disable();
+        }
+    }
 
-	public StringSetting add(StringSetting setting) {
-		addSetting(setting);
-		return setting;
-	}
+    public boolean setBind(String rkey) {
+        if (rkey.equalsIgnoreCase("none")) {
+            this.bindSetting.setValue(-1);
+            return true;
+        }
+        int key;
+        try {
+            key = InputUtil.fromTranslationKey("key.keyboard." + rkey.toLowerCase()).getCode();
+        } catch (NumberFormatException e) {
+            if (!nullCheck()) sendMessage("§4Bad bind!");
+            return false;
+        }
+        if (rkey.equalsIgnoreCase("none")) {
+            key = -1;
+        }
+        if (key == 0) {
+            return false;
+        }
+        this.bindSetting.setValue(key);
+        return true;
+    }
 
-	public ColorSetting add(ColorSetting setting) {
-		addSetting(setting);
-		return setting;
-	}
+    public void onDisable() {
 
-	public SliderSetting add(SliderSetting setting) {
-		addSetting(setting);
-		return setting;
-	}
+    }
 
-	public BooleanSetting add(BooleanSetting setting) {
-		addSetting(setting);
-		return setting;
-	}
+    public void onEnable() {
 
-	public <T extends Enum<T>> EnumSetting<T> add(EnumSetting<T> setting) {
-		addSetting(setting);
-		return setting;
-	}
+    }
 
-	public BindSetting add(BindSetting setting) {
-		addSetting(setting);
-		return setting;
-	}
+    public void onToggle() {
 
-	public List<Setting> getSettings() {
-		return this.settings;
-	}
+    }
 
-	public boolean hasSettings() {
-		return !this.settings.isEmpty();
-	}
+    public void onLogin() {
 
-	public static boolean nullCheck() {
-		return mc.player == null || mc.world == null;
-	}
+    }
 
-	public void onDisable() {
+    public void onLogout() {
 
-	}
+    }
 
-	public void onEnable() {
+    public void onRender2D(DrawContext drawContext, float tickDelta) {
 
-	}
+    }
 
-	public void onToggle() {
+    public void onRender3D(MatrixStack matrixStack) {
 
-	}
+    }
 
-	public void onUpdate() {
+    public void addSetting(Setting setting) {
+        this.settings.add(setting);
+    }
 
-	}
+    public StringSetting add(StringSetting setting) {
+        addSetting(setting);
+        return setting;
+    }
 
-	public void onThread() {
+    public ColorSetting add(ColorSetting setting) {
+        addSetting(setting);
+        return setting;
+    }
 
-	}
+    public SliderSetting add(SliderSetting setting) {
+        addSetting(setting);
+        return setting;
+    }
 
-	public void onLogin() {
+    public BooleanSetting add(BooleanSetting setting) {
+        addSetting(setting);
+        return setting;
+    }
 
-	}
+    public <T extends Enum<T>> EnumSetting<T> add(EnumSetting<T> setting) {
+        addSetting(setting);
+        return setting;
+    }
 
-	public void onLogout() {
+    public BindSetting add(BindSetting setting) {
+        addSetting(setting);
+        return setting;
+    }
 
-	}
-	public void onRender2D(DrawContext drawContext, float tickDelta) {
+    public List<Setting> getSettings() {
+        return this.settings;
+    }
 
-	}
+    public static boolean nullCheck() {
+        return mc.player == null || mc.player.input == null || mc.world == null;
+    }
 
-	public void onRender3D(MatrixStack matrixStack) {
+    public static void sendSequencedPacket(SequencedPacketCreator packetCreator) {
+        if (mc.getNetworkHandler() == null || mc.world == null) return;
+        try (PendingUpdateManager pendingUpdateManager = mc.world.getPendingUpdateManager().incrementSequence()) {
+            int i = pendingUpdateManager.getSequence();
+            mc.getNetworkHandler().sendPacket(packetCreator.predict(i));
+        }
+    }
 
-	}
+    public enum Category {
+        Combat {
+            @Override
+            public String getIcon() {
+                return "b";
+            }
+        }, Misc {
+            @Override
+            public String getIcon() {
+                return "[";
+            }
+        }, Render {
+            @Override
+            public String getIcon() {
+                return "a";
+            }
+        }, Movement {
+            @Override
+            public String getIcon() {
+                return "8";
+            }
+        }, Player {
+            @Override
+            public String getIcon() {
+                return "5";
+            }
+        }, Exploit {
+            @Override
+            public String getIcon() {
+                return "6";
+            }
+        }, Client {
+            @Override
+            public String getIcon() {
+                return "7";
+            }
+        };
 
-	public final boolean isCategory(Module.Category category) {
-		return category == this.category;
-	}
-
-	public String getArrayName() {
-		return getDisplayName() + getArrayInfo();
-	}
-	public String getArrayInfo() {
-		return (getInfo() == null ? "" : " §7[" + getInfo() + "§7]");
-	}
-	public String getInfo() {
-		return null;
-	}
-
-	public enum Category {
-		Combat, Misc, Render, Movement, Player, Exploit, Client
-	}
+        public abstract String getIcon();
+    }
 }

@@ -4,10 +4,16 @@ import dev.luminous.api.events.Event;
 import net.minecraft.entity.Entity;
 
 public class EntitySpawnEvent extends Event {
-    private final Entity entity;
-    public EntitySpawnEvent(Entity entity) {
-        super(Stage.Pre);
-        this.entity = entity;
+    private EntitySpawnEvent() {
+    }
+
+    private static final EntitySpawnEvent INSTANCE = new EntitySpawnEvent();
+    private Entity entity;
+
+    public static EntitySpawnEvent get(Entity entity) {
+        INSTANCE.entity = entity;
+        INSTANCE.setCancelled(false);
+        return INSTANCE;
     }
 
     public Entity getEntity() {

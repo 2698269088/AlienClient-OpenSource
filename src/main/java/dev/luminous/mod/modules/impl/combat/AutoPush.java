@@ -1,15 +1,17 @@
 package dev.luminous.mod.modules.impl.combat;
 
+import dev.luminous.Alien;
+import dev.luminous.api.events.eventbus.EventListener;
+import dev.luminous.api.events.impl.UpdateEvent;
 import dev.luminous.api.utils.combat.CombatUtil;
-import dev.luminous.api.utils.entity.EntityUtil;
-import dev.luminous.api.utils.entity.InventoryUtil;
 import dev.luminous.api.utils.math.MathUtil;
 import dev.luminous.api.utils.math.Timer;
+import dev.luminous.api.utils.player.EntityUtil;
+import dev.luminous.api.utils.player.InventoryUtil;
 import dev.luminous.api.utils.world.BlockPosX;
 import dev.luminous.api.utils.world.BlockUtil;
-import dev.luminous.Alien;
+import dev.luminous.core.impl.RotationManager;
 import dev.luminous.mod.modules.Module;
-import dev.luminous.mod.modules.impl.client.AntiCheat;
 import dev.luminous.mod.modules.impl.client.ClientSetting;
 import dev.luminous.mod.modules.impl.exploit.Blink;
 import dev.luminous.mod.modules.impl.player.PacketMine;
@@ -50,12 +52,6 @@ public class AutoPush extends Module {
         INSTANCE = this;
     }
 
-    @Override
-    public void onEnable() {
-        AutoCrystal.INSTANCE.lastBreakTimer.reset();
-        //CrystalAura.INSTANCE.faceTimer.reset();
-    }
-
     public static void pistonFacing(Direction i) {
         if (i == Direction.EAST) {
             Alien.ROTATION.snapAt(-90.0f, 5.0f);
@@ -68,12 +64,18 @@ public class AutoPush extends Module {
         }
     }
 
+    @Override
+    public void onEnable() {
+        AutoCrystal.INSTANCE.lastBreakTimer.reset();
+        //CrystalAura.INSTANCE.faceTimer.reset();
+    }
+
     boolean isTargetHere(BlockPos pos, Entity target) {
         return new Box(pos).intersects(target.getBoundingBox());
     }
 
-    @Override
-    public void onUpdate() {
+    @EventListener
+    public void onUpdate(UpdateEvent event) {
         if (!timer.passedMs(updateDelay.getValue())) return;
         if (selfGround.getValue() && !mc.player.isOnGround()) {
             return;
@@ -87,22 +89,6 @@ public class AutoPush extends Module {
         if (Blink.INSTANCE.isOn() && Blink.INSTANCE.pauseModule.getValue()) return;
         for (PlayerEntity player : CombatUtil.getEnemies(range.getValue())) {
             if (!canPush(player)) continue;
-            for (Direction i : Direction.values()) {
-                if (i == Direction.UP || i == Direction.DOWN) continue;
-                BlockPos pos = EntityUtil.getEntityPos(player).offset(i);
-                if (isTargetHere(pos, player)) {
-                    if (mc.world.canCollide(player, new Box(pos))) {
-                        if (tryPush(EntityUtil.getEntityPos(player).offset(i.getOpposite()), i)) {
-                            timer.reset();
-                            return;
-                        }
-                        if (tryPush(EntityUtil.getEntityPos(player).offset(i.getOpposite()).up(), i)) {
-                            timer.reset();
-                            return;
-                        }
-                    }
-                }
-            }
 
             float[] offset = new float[]{-0.25f, 0f, 0.25f};
             for (float x : offset) {
@@ -171,7 +157,7 @@ public class AutoPush extends Module {
     private boolean tryPush(BlockPos piston, Direction direction) {
         if (!mc.world.isAir(piston.offset(direction))) return false;
         if (isTrueFacing(piston, direction) && facingCheck(piston)) {
-            if (BlockUtil.clientCanPlace(piston)) {
+            if (BlockUtil.clientCanPlace(piston, false)) {
                 boolean canPower = false;
                 if (BlockUtil.getPlaceSide(piston, placeRange.getValue()) != null) {
                     CombatUtil.modifyPos = piston;
@@ -205,8 +191,9 @@ public class AutoPush extends Module {
                             } else {
                                 doSwap(old);
                             }
-                            if (rotate.getValue() && yawDeceive.getValue()) Alien.ROTATION.lookAt(piston.offset(side), side.getOpposite());
-                            if (rotate.getValue() && AntiCheat.INSTANCE.snapBack.getValue()) {
+                            if (rotate.getValue() && yawDeceive.getValue())
+                                Alien.ROTATION.lookAt(piston.offset(side), side.getOpposite());
+                            if (rotate.getValue()) {
                                 Alien.ROTATION.snapBack();
                             }
                             for (Direction i : Direction.values()) {
@@ -269,9 +256,6 @@ public class AutoPush extends Module {
                         } else {
                             doSwap(oldSlot);
                         }
-/*                        if (mine.getValue()) {
-                            PacketMine.INSTANCE.mine(piston.offset(powerFacing));
-                        }*/
 
                         CombatUtil.modifyPos = piston.offset(powerFacing);
                         CombatUtil.modifyBlockState = getBlockType().getDefaultState();
@@ -289,8 +273,9 @@ public class AutoPush extends Module {
                             } else {
                                 doSwap(old);
                             }
-                            if (rotate.getValue() && yawDeceive.getValue()) Alien.ROTATION.lookAt(piston.offset(side), side.getOpposite());
-                            if (rotate.getValue() && AntiCheat.INSTANCE.snapBack.getValue()) {
+                            if (rotate.getValue() && yawDeceive.getValue())
+                                Alien.ROTATION.lookAt(piston.offset(side), side.getOpposite());
+                            if (rotate.getValue()) {
                                 Alien.ROTATION.snapBack();
                             }
                         }
@@ -330,6 +315,7 @@ public class AutoPush extends Module {
         }
         return false;
     }
+
     private boolean facingCheck(BlockPos pos) {
         if (ClientSetting.INSTANCE.lowVersion.getValue()) {
             Direction direction = MathUtil.getDirectionFromEntityLiving(pos, mc.player);
@@ -337,12 +323,13 @@ public class AutoPush extends Module {
         }
         return true;
     }
+
     private boolean isTrueFacing(BlockPos pos, Direction facing) {
         if (yawDeceive.getValue()) return true;
         Direction side = BlockUtil.getPlaceSide(pos);
         if (side == null) return false;
         Vec3d directionVec = new Vec3d(pos.getX() + 0.5 + side.getVector().getX() * 0.5, pos.getY() + 0.5 + side.getVector().getY() * 0.5, pos.getZ() + 0.5 + side.getVector().getZ() * 0.5);
-        float[] rotation = Alien.ROTATION.getRotation(directionVec);
+        float[] rotation =  RotationManager.getRotation(directionVec);
         return MathUtil.getFacingOrder(rotation[0], rotation[1]).getOpposite() == facing;
     }
 
@@ -353,6 +340,7 @@ public class AutoPush extends Module {
             InventoryUtil.switchToSlot(slot);
         }
     }
+
     public int findBlock(Block blockIn) {
         if (inventory.getValue()) {
             return InventoryUtil.findBlockInventorySlot(blockIn);
@@ -360,13 +348,15 @@ public class AutoPush extends Module {
             return InventoryUtil.findBlock(blockIn);
         }
     }
-    public int findClass(Class clazz) {
+
+    public int findClass(Class<?> clazz) {
         if (inventory.getValue()) {
             return InventoryUtil.findClassInventorySlot(clazz);
         } else {
             return InventoryUtil.findClass(clazz);
         }
     }
+
     private Boolean canPush(PlayerEntity player) {
         if (onlyGround.getValue() && !player.isOnGround()) return false;
         if (!allowWeb.getValue() && Alien.PLAYER.isInWeb(player)) return false;
@@ -374,10 +364,14 @@ public class AutoPush extends Module {
 
         int progress = 0;
 
-        if (mc.world.canCollide(player, new Box(new BlockPosX(player.getX() + 1, player.getY() + 0.5, player.getZ())))) progress++;
-        if (mc.world.canCollide(player, new Box(new BlockPosX(player.getX() - 1, player.getY() + 0.5, player.getZ())))) progress++;
-        if (mc.world.canCollide(player, new Box(new BlockPosX(player.getX(), player.getY() + 0.5, player.getZ() + 1)))) progress++;
-        if (mc.world.canCollide(player, new Box(new BlockPosX(player.getX(), player.getY() + 0.5, player.getZ() - 1)))) progress++;
+        if (mc.world.canCollide(player, new Box(new BlockPosX(player.getX() + 1, player.getY() + 0.5, player.getZ()))))
+            progress++;
+        if (mc.world.canCollide(player, new Box(new BlockPosX(player.getX() - 1, player.getY() + 0.5, player.getZ()))))
+            progress++;
+        if (mc.world.canCollide(player, new Box(new BlockPosX(player.getX(), player.getY() + 0.5, player.getZ() + 1))))
+            progress++;
+        if (mc.world.canCollide(player, new Box(new BlockPosX(player.getX(), player.getY() + 0.5, player.getZ() - 1))))
+            progress++;
 
         for (float x : offset) {
             for (float z : offset) {
@@ -412,6 +406,7 @@ public class AutoPush extends Module {
 
         return progress > surroundCheck.getValue() - 1 || Alien.HOLE.isHard(new BlockPosX(player.getX(), player.getY() + 0.5, player.getZ()));
     }
+
     private Block getBlock(BlockPos pos) {
         return mc.world.getBlockState(pos).getBlock();
     }

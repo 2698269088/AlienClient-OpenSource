@@ -108,7 +108,6 @@ void main(void) {
         clamp(length(q), 0.0, 1.0)
     );
 
-
     color = mix(
         color,
         vec3(0.1, -0.5, 0.1),

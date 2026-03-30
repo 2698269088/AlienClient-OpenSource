@@ -13,6 +13,7 @@ public abstract class MixinParticle {
     protected double velocityY;
     @Shadow
     protected double velocityZ;
+
     @Shadow
     public abstract void setColor(float red, float green, float blue);
 

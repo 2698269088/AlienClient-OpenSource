@@ -1,7 +1,7 @@
 package dev.luminous.asm.mixins;
 
+import dev.luminous.api.interfaces.IShaderEffectHook;
 import dev.luminous.asm.accessors.IPostProcessShader;
-import dev.luminous.api.interfaces.IShaderEffect;
 import net.minecraft.client.gl.Framebuffer;
 import net.minecraft.client.gl.PostEffectPass;
 import net.minecraft.client.gl.PostEffectProcessor;
@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.Map;
 
 @Mixin(PostEffectProcessor.class)
-public class MixinShaderEffect implements IShaderEffect {
+public class MixinShaderEffect implements IShaderEffectHook {
 
     @Unique
     private final List<String> fakedBufferNames = new ArrayList<>();
@@ -30,7 +30,7 @@ public class MixinShaderEffect implements IShaderEffect {
     private List<PostEffectPass> passes;
 
     @Override
-    public void addHook(String name, Framebuffer buffer) {
+    public void alienClient$addHook(String name, Framebuffer buffer) {
         Framebuffer previousFramebuffer = this.targetsByName.get(name);
         if (previousFramebuffer == buffer) {
             return;

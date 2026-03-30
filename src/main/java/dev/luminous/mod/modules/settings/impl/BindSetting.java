@@ -1,7 +1,5 @@
 package dev.luminous.mod.modules.settings.impl;
 
-import dev.luminous.Alien;
-import dev.luminous.core.impl.ModuleManager;
 import dev.luminous.mod.modules.settings.Setting;
 import org.lwjgl.glfw.GLFW;
 
@@ -9,59 +7,44 @@ import java.lang.reflect.Field;
 import java.util.function.BooleanSupplier;
 
 public class BindSetting extends Setting {
-    private boolean isListening = false;
-    private int key;
-    private final int defaultKey;
+    private final int defaultValue;
+    public boolean holding = false;
+    private int value;
     private boolean pressed = false;
     private boolean holdEnable = false;
-    public boolean hold = false;
-    public BindSetting(String name, int key) {
-        super(name, ModuleManager.lastLoadMod.getName() + "_" + name);
-        defaultKey = key;
-        this.key = key;
+
+    public BindSetting(String name, int value) {
+        super(name);
+        defaultValue = value;
+        this.value = value;
     }
 
-    public BindSetting(String name, int key, BooleanSupplier visibilityIn) {
-        super(name, ModuleManager.lastLoadMod.getName() + "_" + name, visibilityIn);
-        defaultKey = key;
-        this.key = key;
+    public BindSetting(String name, int value, BooleanSupplier visibilityIn) {
+        super(name, visibilityIn);
+        defaultValue = value;
+        this.value = value;
     }
 
-    @Override
-    public void loadSetting() {
-        setKey(Alien.CONFIG.getInt(getLine(), defaultKey));
-        setHoldEnable(Alien.CONFIG.getBoolean(getLine() + "_hold"));
+    public int getValue() {
+        return this.value;
     }
 
-    public int getKey() {
-        return this.key;
+    public void setValue(int value) {
+        this.value = value;
     }
 
-    public void setKey(int key) {
-        this.key = key;
-    }
-
-    public String getBind() {
-        if (key == -1) return "None";
-        if (key < -1) {
-            if (key == -2) {
-                return "MouseLeft";
-            }
-            if (key == -3) {
-                return "MouseRight";
-            }
-            if (key == -4) {
-                return "MouseMiddle";
-            }
-            return "Mouse" + (Math.abs(key) - 4);
+    public String getKeyString() {
+        if (value == -1) return "None";
+        if (value < -1) {
+            return "Mouse" + (Math.abs(value) - 1);
         }
-        String kn = this.key > 0 ? GLFW.glfwGetKeyName(this.key, GLFW.glfwGetKeyScancode(this.key)) : "None";
+        String kn = this.value > 0 ? GLFW.glfwGetKeyName(this.value, GLFW.glfwGetKeyScancode(this.value)) : "None";
         if (kn == null) {
             try {
                 for (Field declaredField : GLFW.class.getDeclaredFields()) {
                     if (declaredField.getName().startsWith("GLFW_KEY_")) {
                         int a = (int) declaredField.get(null);
-                        if (a == this.key) {
+                        if (a == this.value) {
                             String nb = declaredField.getName().substring("GLFW_KEY_".length());
                             kn = nb.substring(0, 1).toUpperCase() + nb.substring(1).toLowerCase();
                         }
@@ -71,31 +54,29 @@ public class BindSetting extends Setting {
                 kn = "None";
             }
         }
-
+        if (kn == null) {
+            return "Unknown " + value;
+        }
         return kn.toUpperCase();
-    }
-
-    public void setListening(boolean set) {
-        isListening = set;
-    }
-
-    public boolean isListening() {
-        return isListening;
-    }
-
-    public void setPressed(boolean pressed) {
-        this.pressed = pressed;
     }
 
     public boolean isPressed() {
         return pressed;
     }
 
-    public void setHoldEnable(boolean holdEnable) {
-        this.holdEnable = holdEnable;
+    public void setPressed(boolean pressed) {
+        this.pressed = pressed;
     }
 
     public boolean isHoldEnable() {
         return holdEnable;
+    }
+
+    public void setHoldEnable(boolean holdEnable) {
+        this.holdEnable = holdEnable;
+    }
+
+    public int getDefaultValue() {
+        return defaultValue;
     }
 }

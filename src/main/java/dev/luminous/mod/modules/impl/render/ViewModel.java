@@ -1,25 +1,17 @@
 package dev.luminous.mod.modules.impl.render;
 
-import dev.luminous.mod.modules.settings.impl.BooleanSetting;
-import dev.luminous.mod.modules.settings.impl.SliderSetting;
-import dev.luminous.api.events.eventbus.EventHandler;
+import dev.luminous.api.events.eventbus.EventListener;
 import dev.luminous.api.events.impl.HeldItemRendererEvent;
 import dev.luminous.asm.accessors.IHeldItemRenderer;
 import dev.luminous.mod.modules.Module;
+import dev.luminous.mod.modules.settings.impl.BooleanSetting;
+import dev.luminous.mod.modules.settings.impl.SliderSetting;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Hand;
 import net.minecraft.util.math.RotationAxis;
 
 public class ViewModel extends Module {
     public static ViewModel INSTANCE;
-    public ViewModel() {
-        super("ViewModel", Category.Render);
-        setChinese("手持模型");
-        INSTANCE = this;
-    }
-
-    public final BooleanSetting swingAnimation = add(new BooleanSetting("SwingAnimation", false));
-    public final BooleanSetting eatAnimation = add(new BooleanSetting("EatAnimation", false));
     public final BooleanSetting mainhandSwap = add(new BooleanSetting("MainhandSwap", true));
     public final BooleanSetting offhandSwap = add(new BooleanSetting("OffhandSwap", true));
     public final SliderSetting scaleMainX = add(new SliderSetting("ScaleMainX", 1f, 0.1f, 5f, 0.01));
@@ -40,10 +32,14 @@ public class ViewModel extends Module {
     public final SliderSetting rotationOffX = add(new SliderSetting("RotationOffX", 0f, -180.0f, 180f, 0.01));
     public final SliderSetting rotationOffY = add(new SliderSetting("RotationOffY", 0f, -180.0f, 180f, 0.01));
     public final SliderSetting rotationOffZ = add(new SliderSetting("RotationOffZ", 0f, -180.0f, 180f, 0.01));
-    public final BooleanSetting slowAnimation = add(new BooleanSetting("SlowAnimation", true));
-    public final SliderSetting slowAnimationVal = add(new SliderSetting("SlowValue", 6, 1, 50));
-    public final SliderSetting eatX = add(new SliderSetting("EatX", 1f, -1f, 2f, 0.01));
-    public final SliderSetting eatY = add(new SliderSetting("EatY", 1f, -1f, 2f, 0.01));
+    public final BooleanSetting slowAnimation = add(new BooleanSetting("SwingSpeed", true));
+    public final SliderSetting slowAnimationVal = add(new SliderSetting("Value", 6, 1, 50));
+
+    public ViewModel() {
+        super("ViewModel", Category.Render);
+        setChinese("手持模型");
+        INSTANCE = this;
+    }
 
     @Override
     public void onRender3D(MatrixStack matrixStack) {
@@ -58,7 +54,7 @@ public class ViewModel extends Module {
         }
     }
 
-    @EventHandler
+    @EventListener
     private void onHeldItemRender(HeldItemRendererEvent event) {
         if (event.getHand() == Hand.MAIN_HAND) {
             event.getStack().translate(positionMainX.getValueFloat(), positionMainY.getValueFloat(), positionMainZ.getValueFloat());

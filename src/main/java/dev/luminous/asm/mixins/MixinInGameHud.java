@@ -1,16 +1,23 @@
 package dev.luminous.asm.mixins;
 
 import dev.luminous.Alien;
+import dev.luminous.api.events.impl.PreRender2DEvent;
+import dev.luminous.api.utils.player.EntityUtil;
+import dev.luminous.api.utils.render.ColorUtil;
+import dev.luminous.api.utils.render.TextUtil;
+import dev.luminous.core.impl.FontManager;
 import dev.luminous.mod.modules.impl.client.ClientSetting;
-import dev.luminous.mod.modules.impl.player.freelook.CameraState;
-import dev.luminous.mod.modules.impl.player.freelook.FreeLook;
-import dev.luminous.mod.modules.impl.player.freelook.ProjectionUtils;
+import dev.luminous.mod.modules.impl.client.HUD;
 import dev.luminous.mod.modules.impl.render.Crosshair;
 import dev.luminous.mod.modules.impl.render.NoRender;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.hud.InGameHud;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.client.render.RenderTickCounter;
+import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.item.ItemStack;
+import net.minecraft.registry.tag.FluidTags;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -18,100 +25,141 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyArg;
-import org.spongepowered.asm.mixin.injection.ModifyArgs;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
+
+import java.awt.*;
 
 @Mixin(InGameHud.class)
-public class MixinInGameHud {
+public abstract class MixinInGameHud {
 
+    @Final
+    @Shadow
+    private MinecraftClient client;
 
-	@Shadow @Final private MinecraftClient client;
+    @Inject(method = "renderPortalOverlay", at = @At("HEAD"), cancellable = true)
+    private void onRenderPortalOverlay(DrawContext context, float nauseaStrength, CallbackInfo ci) {
+        if (NoRender.INSTANCE.isOn() && NoRender.INSTANCE.portal.getValue()) ci.cancel();
+    }
 
-	@Inject(method = "renderPortalOverlay", at = @At("HEAD"), cancellable = true)
-	private void onRenderPortalOverlay(DrawContext context, float nauseaStrength, CallbackInfo ci) {
-		if (NoRender.INSTANCE.isOn() && NoRender.INSTANCE.portal.getValue()) ci.cancel();
-	}
+    @Inject(method = "renderStatusEffectOverlay", at = @At("HEAD"), cancellable = true)
+    private void onRenderStatusEffectOverlay(CallbackInfo info) {
+        if (NoRender.INSTANCE.isOn() && NoRender.INSTANCE.potionsIcon.getValue()) info.cancel();
+    }
 
-	@Inject(method = "renderStatusEffectOverlay", at = @At("HEAD"), cancellable = true)
-	private void onRenderStatusEffectOverlay(DrawContext context, CallbackInfo ci) {
-		if (NoRender.INSTANCE.isOn() && NoRender.INSTANCE.potionsIcon.getValue()) ci.cancel();
-	}
+    @Unique
+    final
+    Color minColor = new Color(196, 0, 0);
+    @Unique
+    final
+    Color maxColor = new Color(0, 227, 0);
 
-	@Inject(at = {@At(value = "INVOKE", target = "Lcom/mojang/blaze3d/systems/RenderSystem;enableBlend()V", remap = false, ordinal = 3)}, method = {"render(Lnet/minecraft/client/gui/DrawContext;F)V"})
-	private void onRender(DrawContext context, float tickDelta, CallbackInfo ci) {
-		Alien.MODULE.render2D(context);
-	}
+    @Inject(method = "renderMainHud", at = @At("TAIL"))
+    private void onRenderMainHud(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
+        if (HUD.INSTANCE.isOn() && HUD.INSTANCE.armor.getValue()) {
+            PlayerEntity player = this.getCameraPlayer();
+            if (player != null) {
+                int x = context.getScaledWindowWidth() / 2 + 91;
+                int y = context.getScaledWindowHeight() - 28 - HUD.INSTANCE.armorOffset.getValueInt();
 
-	@Inject(method = "clear", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/hud/ChatHud;clear(Z)V"), cancellable = true)
-	private void onClear(CallbackInfo info) {
-		if (ClientSetting.INSTANCE.isOn() && ClientSetting.INSTANCE.keepHistory.getValue()) {
-			info.cancel();
-		}
-	}
+                if (this.client.interactionManager.hasStatusBars()) {
+                    y -= 16;
+                }
+                int t = this.getHeartCount(getRiddenEntity());
+                if (t == 0) {
+                    y -= 10;
+                }
 
-    @ModifyArg(method="renderHotbar",at=@At(value="INVOKE",target="Lnet/minecraft/client/gui/DrawContext;drawGuiTexture(Lnet/minecraft/util/Identifier;IIII)V",ordinal = 1),index = 1)
-	private int selectedSlotX(int x){
-		if (ClientSetting.INSTANCE.hotbar()) {
+                int maxAir = player.getMaxAir();
+                int air = Math.min(player.getAir(), maxAir);
+                if (player.isSubmergedIn(FluidTags.WATER) || air < maxAir) {
+                    int w = this.getHeartRows(t) - 1;
+                    y += w * 10;
+                }
+
+                for (ItemStack armor : client.player.getInventory().armor) {
+                    x -= 20;
+                    if (armor.isEmpty()) continue;
+                    context.getMatrices().push();
+                    int damage = EntityUtil.getDamagePercent(armor);
+                    context.drawItem(armor, x, y);
+                    context.drawItemInSlot(client.textRenderer, armor, x, y);
+
+                    if (HUD.INSTANCE.durability.getValue()) {
+                        if (HUD.INSTANCE.font.getValue()) {
+                            FontManager.small.drawString(context.getMatrices(), damage + "%",
+                                    (x + 1),
+                                    y - FontManager.small.getFontHeight() / 2,
+                                    ColorUtil.fadeColor(minColor, maxColor, damage / 100f).getRGB(), HUD.INSTANCE.shadow.getValue());
+                        } else {
+                            TextUtil.drawStringScale(context, damage + "%",
+                                    (x + 2),
+                                    (y - client.textRenderer.fontHeight / 4f),
+                                    ColorUtil.fadeColor(minColor, maxColor, damage / 100f).getRGB(),
+                                    0.5F,
+                                    HUD.INSTANCE.shadow.getValue()
+                            );
+                        }
+                    }
+                    context.getMatrices().pop();
+                }
+            }
+        }
+    }
+
+    @Shadow
+    private int getHeartRows(int t) {
+        return 0;
+    }
+
+    @Shadow
+    private int getHeartCount(LivingEntity livingEntity) {
+        return 0;
+    }
+
+    @Shadow
+    private PlayerEntity getCameraPlayer() {
+        return null;
+    }
+
+    @Shadow
+    private LivingEntity getRiddenEntity() {
+        return null;
+    }
+
+    @Shadow
+    public abstract void render(DrawContext context, RenderTickCounter tickCounter);
+
+    @Inject(at = @At(value = "HEAD"), method = "render")
+    public void renderStart(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
+        Alien.EVENT_BUS.post(PreRender2DEvent.get(context));
+    }
+
+    @Inject(at = @At(value = "TAIL"), method = "render")
+    public void renderHook(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
+        Alien.MODULE.onRender2D(context);
+    }
+
+    @Inject(method = "clear", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/hud/ChatHud;clear(Z)V"), cancellable = true)
+    private void onClear(CallbackInfo info) {
+        if (ClientSetting.INSTANCE.isOn() && ClientSetting.INSTANCE.keepHistory.getValue()) {
+            info.cancel();
+        }
+    }
+
+    @ModifyArg(method = "renderHotbar", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/DrawContext;drawGuiTexture(Lnet/minecraft/util/Identifier;IIII)V", ordinal = 1), index = 1)
+    private int selectedSlotX(int x) {
+        if (ClientSetting.INSTANCE.hotbar()) {
             double hotbarX = ClientSetting.animation.get(x, ClientSetting.INSTANCE.hotbarTime.getValueInt(), ClientSetting.INSTANCE.animEase.getValue());
-			return (int) hotbarX;
-		}
-		return(x);
-	}
+            return (int) hotbarX;
+        }
+        return (x);
+    }
 
-	@Unique
-	private CameraState camera;
-
-	@Unique
-	private double offsetCrosshairX;
-	@Unique
-	private double offsetCrosshairY;
-
-	@Inject(method = "renderCrosshair", at = @At("HEAD"), cancellable = true)
-	private void onRenderCrosshairBegin(DrawContext context, CallbackInfo ci) {
-		if (Crosshair.INSTANCE.isOn()) {
-			Crosshair.INSTANCE.draw(context);
-			ci.cancel();
-			return;
-		}
-		camera = FreeLook.INSTANCE.getCameraState();
-
-		var shouldDrawCrosshair = false;
-
-		if (camera.doTransition || camera.doLock) {
-			var cameraEntity = MinecraftClient.getInstance().getCameraEntity();
-
-			var distance = Integer.MAX_VALUE;
-			var position = cameraEntity.getPos();
-
-			var rotation = Vec3d.fromPolar(camera.originalPitch(), camera.originalYaw());
-
-			var point = position.add(
-					rotation.getX() * distance,
-					rotation.getY() * distance,
-					rotation.getZ() * distance
-			);
-
-			var projected = ProjectionUtils.worldToScreen(point);
-
-			if (projected.getZ() < 0) {
-				offsetCrosshairX = -projected.getX();
-				offsetCrosshairY = -projected.getY();
-				shouldDrawCrosshair = true;
-			}
-
-			shouldDrawCrosshair |= MinecraftClient.getInstance().inGameHud.getDebugHud().shouldShowDebugHud();
-
-			if (!shouldDrawCrosshair)
-				ci.cancel();
-		}
-	}
-
-	@ModifyArgs(method = "renderCrosshair", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/DrawContext;drawGuiTexture(Lnet/minecraft/util/Identifier;IIII)V"))
-	private void modifyDrawTextureArgs(Args args) {
-		if (camera.doTransition || camera.doLock) {
-			args.set(1, args.<Integer>get(1) + (int) offsetCrosshairX);
-			args.set(2, args.<Integer>get(2) + (int) offsetCrosshairY);
-		}
-	}
+    @Inject(method = "renderCrosshair", at = @At("HEAD"), cancellable = true)
+    private void onRenderCrosshairBegin(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
+        if (Crosshair.INSTANCE.isOn()) {
+            Crosshair.INSTANCE.draw(context);
+            ci.cancel();
+        }
+    }
 }

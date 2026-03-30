@@ -1,25 +1,25 @@
 package dev.luminous.mod.modules.impl.render;
 
+import dev.luminous.api.events.eventbus.EventListener;
+import dev.luminous.api.events.impl.PacketEvent;
+import dev.luminous.api.events.impl.PreRender2DEvent;
+import dev.luminous.api.events.impl.UpdateEvent;
+import dev.luminous.mod.modules.Module;
 import dev.luminous.mod.modules.settings.impl.BooleanSetting;
 import dev.luminous.mod.modules.settings.impl.ColorSetting;
 import dev.luminous.mod.modules.settings.impl.SliderSetting;
-import dev.luminous.api.events.eventbus.EventHandler;
-import dev.luminous.api.events.impl.PacketEvent;
-import dev.luminous.mod.modules.Module;
-import net.minecraft.entity.effect.StatusEffectInstance;
-import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.network.packet.s2c.play.WorldTimeUpdateS2CPacket;
 
 import java.awt.*;
 
-
 public class Ambience extends Module {
 
     public static Ambience INSTANCE;
+    public final ColorSetting filter = add(new ColorSetting("Filter", new Color(255, 255, 255, 20)).injectBoolean(false));
     public final ColorSetting worldColor = add(new ColorSetting("WorldColor", new Color(0xFFFFFFFF, true)).injectBoolean(true));
     public final BooleanSetting customTime =
             add(new BooleanSetting("CustomTime", false).setParent());
-    private final SliderSetting time =
+    public final SliderSetting time =
             add(new SliderSetting("Time", 0, 0, 24000, customTime::isOpen));
     public final ColorSetting fog =
             add(new ColorSetting("FogColor", new Color(0xCC7DD5)).injectBoolean(false));
@@ -51,19 +51,23 @@ public class Ambience extends Module {
                     mc.worldRenderer.reload();
                 }
             }));
+    long oldTime;
+
     public Ambience() {
         super("Ambience", "Custom ambience", Category.Render);
         setChinese("自定义环境");
         INSTANCE = this;
     }
 
-    long oldTime;
-
-    @Override
-    public void onUpdate() {
-        if (fullBright.getValue()) {
-            mc.player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 100000, 0));
+    @EventListener
+    public void onRender2D(PreRender2DEvent event) {
+        if (filter.booleanValue) {
+            event.drawContext.fill(0, 0, mc.getWindow().getScaledWidth(), mc.getWindow().getScaledHeight(), filter.getValue().getRGB());
         }
+    }
+
+    @EventListener
+    public void onUpdate(UpdateEvent event) {
         if (customTime.getValue()) {
             mc.world.setTimeOfDay((long) this.time.getValue());
         }
@@ -73,18 +77,20 @@ public class Ambience extends Module {
     public void onEnable() {
         if (nullCheck()) return;
         oldTime = mc.world.getTimeOfDay();
+        if (customTime.getValue()) {
+            mc.world.setTimeOfDay((long) this.time.getValue());
+        }
     }
 
     @Override
     public void onDisable() {
         if (nullCheck()) return;
-        mc.player.removeStatusEffect(StatusEffects.NIGHT_VISION);
         mc.world.setTimeOfDay(oldTime);
     }
 
-    @EventHandler
+    @EventListener
     public void onReceivePacket(PacketEvent.Receive event) {
-        if (event.getPacket() instanceof WorldTimeUpdateS2CPacket) {
+        if (event.getPacket() instanceof WorldTimeUpdateS2CPacket && customTime.getValue()) {
             oldTime = ((WorldTimeUpdateS2CPacket) event.getPacket()).getTime();
             event.cancel();
         }

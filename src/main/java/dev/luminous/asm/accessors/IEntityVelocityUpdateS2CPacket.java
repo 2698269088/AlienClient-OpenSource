@@ -19,4 +19,13 @@ public interface IEntityVelocityUpdateS2CPacket {
     @Mutable
     @Accessor("velocityZ")
     void setZ(int velocityZ);
+
+    @Accessor("velocityX")
+    int getX();
+
+    @Accessor("velocityY")
+    int getY();
+
+    @Accessor("velocityZ")
+    int getZ();
 }

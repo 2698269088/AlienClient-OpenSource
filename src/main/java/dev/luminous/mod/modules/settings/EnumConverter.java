@@ -29,7 +29,6 @@ public class EnumConverter {
             }
             return null;
         } catch (IllegalArgumentException e) {
-            e.printStackTrace();
             return null;
         }
     }

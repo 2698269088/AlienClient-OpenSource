@@ -14,6 +14,7 @@ public interface IChatHud {
     @Mutable
     @Accessor("visibleMessages")
     void setVisibleMessages(List<ChatHudLine.Visible> visibleMessages);
+
     @Mutable
     @Accessor("messages")
     void setMessages(List<ChatHudLine.Visible> messages);

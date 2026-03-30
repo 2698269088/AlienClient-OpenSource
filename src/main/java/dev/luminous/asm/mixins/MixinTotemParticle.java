@@ -18,7 +18,7 @@ public abstract class MixinTotemParticle extends MixinParticle {
     @Inject(method = "<init>", at = @At(value = "TAIL"))
     private void hookInit(ClientWorld world, double x, double y, double z, double velocityX,
                           double velocityY, double velocityZ, SpriteProvider spriteProvider, CallbackInfo ci) {
-        TotemParticleEvent event = new TotemParticleEvent(velocityX,velocityY,velocityZ);
+        TotemParticleEvent event = TotemParticleEvent.get(velocityX, velocityY, velocityZ);
         Alien.EVENT_BUS.post(event);
         if (event.isCancelled()) {
             this.velocityX = event.velocityX;

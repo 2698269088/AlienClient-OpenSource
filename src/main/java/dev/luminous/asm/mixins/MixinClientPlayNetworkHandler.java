@@ -1,10 +1,8 @@
 package dev.luminous.asm.mixins;
 
 import dev.luminous.Alien;
-import dev.luminous.api.events.impl.EntityVelocityUpdateEvent;
-import dev.luminous.api.events.impl.GameLeftEvent;
-import dev.luminous.api.events.impl.SendMessageEvent;
-import dev.luminous.mod.modules.impl.client.ServerApply;
+import dev.luminous.api.events.impl.*;
+import dev.luminous.mod.modules.impl.exploit.AntiPacket;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientCommonNetworkHandler;
 import net.minecraft.client.network.ClientConnectionState;
@@ -23,10 +21,18 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(ClientPlayNetworkHandler.class)
 public abstract class MixinClientPlayNetworkHandler extends ClientCommonNetworkHandler {
+
+    @Shadow
+    private ClientWorld world;
+    @Unique
+    private boolean alien$worldNotNull;
+    @Unique
+    private boolean ignore;
 
     protected MixinClientPlayNetworkHandler(MinecraftClient client, ClientConnection connection, ClientConnectionState connectionState) {
         super(client, connection, connectionState);
@@ -34,14 +40,8 @@ public abstract class MixinClientPlayNetworkHandler extends ClientCommonNetworkH
 
     @Inject(method = "onEnterReconfiguration", at = @At(value = "INVOKE", target = "Lnet/minecraft/network/NetworkThreadUtils;forceMainThread(Lnet/minecraft/network/packet/Packet;Lnet/minecraft/network/listener/PacketListener;Lnet/minecraft/util/thread/ThreadExecutor;)V", shift = At.Shift.AFTER))
     private void onEnterReconfiguration(EnterReconfigurationS2CPacket packet, CallbackInfo info) {
-        Alien.EVENT_BUS.post(new GameLeftEvent());
+        Alien.EVENT_BUS.post(GameLeftEvent.INSTANCE);
     }
-
-    @Shadow
-    private ClientWorld world;
-
-    @Unique
-    private boolean alien$worldNotNull;
 
     @Inject(method = "onGameJoin", at = @At("HEAD"))
     private void onGameJoinHead(GameJoinS2CPacket packet, CallbackInfo info) {
@@ -51,24 +51,30 @@ public abstract class MixinClientPlayNetworkHandler extends ClientCommonNetworkH
     @Inject(method = "onGameJoin", at = @At("TAIL"))
     private void onGameJoinTail(GameJoinS2CPacket packet, CallbackInfo info) {
         if (alien$worldNotNull) {
-            Alien.EVENT_BUS.post(new GameLeftEvent());
+            Alien.EVENT_BUS.post(GameLeftEvent.INSTANCE);
         }
     }
 
     @Shadow
     public abstract void sendChatMessage(String content);
 
-    @Unique
-    private boolean ignore;
+    @Inject(method = "onInventory", at = @At(value = "INVOKE", target = "Lnet/minecraft/network/NetworkThreadUtils;forceMainThread(Lnet/minecraft/network/packet/Packet;Lnet/minecraft/network/listener/PacketListener;Lnet/minecraft/util/thread/ThreadExecutor;)V", shift = At.Shift.AFTER), cancellable = true)
+    public void onInventoryS2CPacket(InventoryS2CPacket packet, CallbackInfo ci) {
+        InventoryS2CPacketEvent event = InventoryS2CPacketEvent.get(packet);
+        Alien.EVENT_BUS.post(event);
+        if (event.isCancelled()) {
+            ci.cancel();
+        }
+    }
 
     @Inject(method = "sendChatMessage", at = @At("HEAD"), cancellable = true)
     private void onSendChatMessage(String message, CallbackInfo ci) {
         if (ignore) return;
-        if (message.startsWith(Alien.PREFIX)) {
+        if (message.startsWith(Alien.getPrefix())) {
             Alien.COMMAND.command(message.split(" "));
             ci.cancel();
         } else {
-            SendMessageEvent event = new SendMessageEvent(message);
+            SendMessageEvent event = SendMessageEvent.get(message);
             Alien.EVENT_BUS.post(event);
             if (event.isCancelled()) {
                 ci.cancel();
@@ -81,117 +87,111 @@ public abstract class MixinClientPlayNetworkHandler extends ClientCommonNetworkH
         }
     }
 
-    @Inject(method = "onEntityVelocityUpdate", at = @At("HEAD"), cancellable = true)
-    public void test(EntityVelocityUpdateS2CPacket packet, CallbackInfo ci) {
-        NetworkThreadUtils.forceMainThread(packet,(ClientPlayNetworkHandler) (Object) this, this.client);
-        Entity entity = this.world.getEntityById(packet.getId());
-        if (entity != null) {
-            if (entity == MinecraftClient.getInstance().player) {
-                EntityVelocityUpdateEvent event = new EntityVelocityUpdateEvent();
-                Alien.EVENT_BUS.post(event);
-                if (!event.isCancelled()) {
-                    entity.setVelocityClient((double) packet.getVelocityX() / 8000.0, (double) packet.getVelocityY() / 8000.0, (double) packet.getVelocityZ() / 8000.0);
-                }
-            } else {
-                entity.setVelocityClient((double) packet.getVelocityX() / 8000.0, (double) packet.getVelocityY() / 8000.0, (double) packet.getVelocityZ() / 8000.0);
-            }
+    @Inject(method = "onCloseScreen", at = @At(value = "INVOKE", target = "Lnet/minecraft/network/NetworkThreadUtils;forceMainThread(Lnet/minecraft/network/packet/Packet;Lnet/minecraft/network/listener/PacketListener;Lnet/minecraft/util/thread/ThreadExecutor;)V", shift = At.Shift.AFTER), cancellable = true)
+    public void onCloseScreen(CloseScreenS2CPacket packet, CallbackInfo ci) {
+        S2CCloseScreenEvent event = S2CCloseScreenEvent.get();
+        Alien.EVENT_BUS.post(event);
+        if (event.isCancelled()) {
+            ci.cancel();
         }
-        ci.cancel();
     }
-    @Inject(method = "onPlayerPositionLook", at = @At("HEAD"), cancellable = true)
+
+    @Redirect(method = {"onEntityVelocityUpdate"}, at = @At(value = "INVOKE", target = "Lnet/minecraft/entity/Entity;setVelocityClient(DDD)V"), require = 0)
+    private void velocityHook(Entity instance, double x, double y, double z) {
+        EntityVelocityUpdateEvent event = EntityVelocityUpdateEvent.get(instance, x, y, z, false);
+        Alien.EVENT_BUS.post(event);
+        if (!event.isCancelled()) {
+            instance.setVelocityClient(event.getX(), event.getY(), event.getZ());
+        }
+    }
+
+    @Redirect(method = {"onExplosion"}, at = @At(value = "INVOKE", target = "Lnet/minecraft/util/math/Vec3d;add(DDD)Lnet/minecraft/util/math/Vec3d;"), require = 0)
+    private Vec3d velocityHook2(Vec3d instance, double x, double y, double z) {
+        EntityVelocityUpdateEvent event = EntityVelocityUpdateEvent.get(client.player, x, y, z, true);
+        Alien.EVENT_BUS.post(event);
+        if (!event.isCancelled()) {
+            return instance.add(event.getX(), event.getY(), event.getZ());
+        }
+        return instance;
+    }
+
+    @Inject(method = "onPlayerPositionLook", at = @At(value = "INVOKE", target = "Lnet/minecraft/network/NetworkThreadUtils;forceMainThread(Lnet/minecraft/network/packet/Packet;Lnet/minecraft/network/listener/PacketListener;Lnet/minecraft/util/thread/ThreadExecutor;)V", shift = At.Shift.AFTER), cancellable = true)
     public void onPlayerPositionLook(PlayerPositionLookS2CPacket packet, CallbackInfo ci) {
-        ci.cancel();
-        NetworkThreadUtils.forceMainThread(packet, (ClientPlayNetworkHandler) (Object) this, this.client);
-        PlayerEntity playerEntity = this.client.player;
-        Vec3d vec3d = playerEntity.getVelocity();
-        boolean bl = packet.getFlags().contains(PositionFlag.X);
-        boolean bl2 = packet.getFlags().contains(PositionFlag.Y);
-        boolean bl3 = packet.getFlags().contains(PositionFlag.Z);
-        double d;
-        double e;
-        if (bl) {
-            d = vec3d.getX();
-            e = playerEntity.getX() + packet.getX();
-            playerEntity.lastRenderX += packet.getX();
-            playerEntity.prevX += packet.getX();
-        } else {
-            d = 0.0;
-            e = packet.getX();
-            playerEntity.lastRenderX = e;
-            playerEntity.prevX = e;
-        }
-
-        double f;
-        double g;
-        if (bl2) {
-            f = vec3d.getY();
-            g = playerEntity.getY() + packet.getY();
-            playerEntity.lastRenderY += packet.getY();
-            playerEntity.prevY += packet.getY();
-        } else {
-            f = 0.0;
-            g = packet.getY();
-            playerEntity.lastRenderY = g;
-            playerEntity.prevY = g;
-        }
-
-        double h;
-        double i;
-        if (bl3) {
-            h = vec3d.getZ();
-            i = playerEntity.getZ() + packet.getZ();
-            playerEntity.lastRenderZ += packet.getZ();
-            playerEntity.prevZ += packet.getZ();
-        } else {
-            h = 0.0;
-            i = packet.getZ();
-            playerEntity.lastRenderZ = i;
-            playerEntity.prevZ = i;
-        }
-
-        playerEntity.setPosition(e, g, i);
-        playerEntity.setVelocity(d, f, h);
-        if (ServerApply.INSTANCE.rotate.getValue()) {
-            float j = packet.getYaw();
-            float k = packet.getPitch();
-            if (packet.getFlags().contains(PositionFlag.X_ROT)) {
-                playerEntity.setPitch(playerEntity.getPitch() + k);
-                playerEntity.prevPitch += k;
+        boolean noRotate = AntiPacket.INSTANCE.isOn() && AntiPacket.INSTANCE.s2CRotate.getValue() && Alien.SERVER.playerNull.passedS(0.25);
+        if (noRotate) {
+            ci.cancel();
+            NetworkThreadUtils.forceMainThread(packet, ClientPlayNetworkHandler.class.cast(this), this.client);
+            PlayerEntity playerEntity = this.client.player;
+            Vec3d vec3d = playerEntity.getVelocity();
+            boolean bl = packet.getFlags().contains(PositionFlag.X);
+            boolean bl2 = packet.getFlags().contains(PositionFlag.Y);
+            boolean bl3 = packet.getFlags().contains(PositionFlag.Z);
+            double d;
+            double e;
+            if (bl) {
+                d = vec3d.getX();
+                e = playerEntity.getX() + packet.getX();
+                playerEntity.lastRenderX += packet.getX();
+                playerEntity.prevX += packet.getX();
             } else {
-                playerEntity.setPitch(k);
-                playerEntity.prevPitch = k;
+                d = 0.0;
+                e = packet.getX();
+                playerEntity.lastRenderX = e;
+                playerEntity.prevX = e;
             }
 
-            if (packet.getFlags().contains(PositionFlag.Y_ROT)) {
-                playerEntity.setYaw(playerEntity.getYaw() + j);
-                playerEntity.prevYaw += j;
+            double f;
+            double g;
+            if (bl2) {
+                f = vec3d.getY();
+                g = playerEntity.getY() + packet.getY();
+                playerEntity.lastRenderY += packet.getY();
+                playerEntity.prevY += packet.getY();
             } else {
-                playerEntity.setYaw(j);
-                playerEntity.prevYaw = j;
+                f = 0.0;
+                g = packet.getY();
+                playerEntity.lastRenderY = g;
+                playerEntity.prevY = g;
             }
 
-            this.connection.send(new TeleportConfirmC2SPacket(packet.getTeleportId()));
-            this.connection
-                    .send(new PlayerMoveC2SPacket.Full(playerEntity.getX(), playerEntity.getY(), playerEntity.getZ(), playerEntity.getYaw(), playerEntity.getPitch(), false));
-        } else {
-            if (ServerApply.INSTANCE.applyYaw.getValue()) {
-                float j = packet.getYaw();
-                float k = packet.getPitch();
+            double h;
+            double i;
+            if (bl3) {
+                h = vec3d.getZ();
+                i = playerEntity.getZ() + packet.getZ();
+                playerEntity.lastRenderZ += packet.getZ();
+                playerEntity.prevZ += packet.getZ();
+            } else {
+                h = 0.0;
+                i = packet.getZ();
+                playerEntity.lastRenderZ = i;
+                playerEntity.prevZ = i;
+            }
+
+            playerEntity.setPosition(e, g, i);
+            playerEntity.setVelocity(d, f, h);
+
+            if (AntiPacket.INSTANCE.applyYaw.getValue()) {
+                float yaw = packet.getYaw();
+                float pitch = packet.getPitch();
+
                 if (packet.getFlags().contains(PositionFlag.X_ROT)) {
-                    k = (Alien.ROTATION.lastYaw + k);
+                    pitch += Alien.ROTATION.getLastPitch();
                 }
 
                 if (packet.getFlags().contains(PositionFlag.Y_ROT)) {
-                    j = (Alien.ROTATION.lastPitch + j);
+                    yaw += Alien.ROTATION.getLastYaw();
                 }
+
                 this.connection.send(new TeleportConfirmC2SPacket(packet.getTeleportId()));
                 this.connection
-                        .send(new PlayerMoveC2SPacket.Full(playerEntity.getX(), playerEntity.getY(), playerEntity.getZ(), j, k, false));
+                        .send(new PlayerMoveC2SPacket.Full(playerEntity.getX(), playerEntity.getY(), playerEntity.getZ(), yaw, pitch, false));
             } else {
                 this.connection.send(new TeleportConfirmC2SPacket(packet.getTeleportId()));
                 this.connection
-                        .send(new PlayerMoveC2SPacket.Full(playerEntity.getX(), playerEntity.getY(), playerEntity.getZ(), Alien.ROTATION.rotationYaw, Alien.ROTATION.rotationPitch, false));
+                        .send(new PlayerMoveC2SPacket.Full(playerEntity.getX(), playerEntity.getY(), playerEntity.getZ(), Alien.ROTATION.getLastYaw(), Alien.ROTATION.getLastPitch(), false));
             }
+            Alien.EVENT_BUS.post(ServerChangePositionEvent.INSTANCE);
         }
     }
 }

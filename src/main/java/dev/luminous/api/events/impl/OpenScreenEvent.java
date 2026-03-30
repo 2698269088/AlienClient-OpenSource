@@ -4,10 +4,16 @@ import dev.luminous.api.events.Event;
 import net.minecraft.client.gui.screen.Screen;
 
 public class OpenScreenEvent extends Event {
+    private OpenScreenEvent() {
+    }
+
+    private static final OpenScreenEvent INSTANCE = new OpenScreenEvent();
     public Screen screen;
-    public OpenScreenEvent(Screen screen) {
-        super(Stage.Pre);
-        this.screen = screen;
+
+    public static OpenScreenEvent get(Screen screen) {
+        INSTANCE.screen = screen;
+        INSTANCE.setCancelled(false);
+        return INSTANCE;
     }
 }
 

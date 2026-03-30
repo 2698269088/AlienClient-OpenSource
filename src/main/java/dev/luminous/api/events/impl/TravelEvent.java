@@ -4,13 +4,17 @@ import dev.luminous.api.events.Event;
 import net.minecraft.entity.player.PlayerEntity;
 
 public class TravelEvent extends Event {
+    private TravelEvent() {
+    }
 
-    private final PlayerEntity entity;
+    private static final TravelEvent INSTANCE = new TravelEvent();
+    private PlayerEntity entity;
 
-
-    public TravelEvent(Stage stage, PlayerEntity entity) {
-        super(stage);
-        this.entity = entity;
+    public static TravelEvent get(Stage stage, PlayerEntity entity) {
+        INSTANCE.entity = entity;
+        INSTANCE.stage = stage;
+        INSTANCE.setCancelled(false);
+        return INSTANCE;
     }
 
     public PlayerEntity getEntity() {

@@ -1,13 +1,14 @@
 package dev.luminous.mod.modules.impl.movement;
 
-import dev.luminous.api.events.eventbus.EventHandler;
+import dev.luminous.Alien;
+import dev.luminous.api.events.eventbus.EventListener;
 import dev.luminous.api.events.impl.MoveEvent;
 import dev.luminous.api.events.impl.PacketEvent;
 import dev.luminous.api.events.impl.TimerEvent;
-import dev.luminous.api.utils.entity.MovementUtil;
+import dev.luminous.api.events.impl.UpdateEvent;
 import dev.luminous.api.utils.math.Timer;
+import dev.luminous.api.utils.player.MovementUtil;
 import dev.luminous.api.utils.world.BlockPosX;
-import dev.luminous.Alien;
 import dev.luminous.mod.modules.Module;
 import dev.luminous.mod.modules.settings.impl.BooleanSetting;
 import dev.luminous.mod.modules.settings.impl.EnumSetting;
@@ -23,7 +24,6 @@ import net.minecraft.world.RaycastContext;
 import java.util.HashMap;
 import java.util.Map;
 
-
 public class FastFall extends Module {
 
     private final EnumSetting<Mode> mode =
@@ -33,14 +33,14 @@ public class FastFall extends Module {
     private final BooleanSetting useTimerSetting =
             add(new BooleanSetting("UseTimer", false));
     private final SliderSetting timer =
-            add(new SliderSetting("Timer", 2.5, 1, 8, 0.1, () -> useTimerSetting.getValue()));
+            add(new SliderSetting("Timer", 2.5, 1, 8, 0.1, useTimerSetting::getValue));
     private final BooleanSetting anchor =
             add(new BooleanSetting("Anchor", true));
     private final SliderSetting height =
             add(new SliderSetting("Height", 10, 1, 20, 0.5));
 
     private final Timer lagTimer = new Timer();
-
+    boolean onGround = false;
     private boolean useTimer;
 
     public FastFall() {
@@ -58,8 +58,8 @@ public class FastFall extends Module {
         return mode.getValue().name();
     }
 
-    @EventHandler(priority = -100)
-            public void onMove(MoveEvent event) {
+    @EventListener(priority = -100)
+    public void onMove(MoveEvent event) {
         if (nullCheck()) return;
         if (mc.player.isOnGround() && anchor.getValue()) {
             if (traceDown() != 0 && traceDown() <= height.getValue() && trace()) {
@@ -68,15 +68,15 @@ public class FastFall extends Module {
             }
         }
     }
-    boolean onGround = false;
-    @Override
-    public void onUpdate() {
+
+    @EventListener
+    public void onUpdate(UpdateEvent event) {
         if ((height.getValue() > 0 && (traceDown() > height.getValue()))
                 || mc.player.isInsideWall()
                 || mc.player.isSubmergedInWater()
                 || mc.player.isInLava()
                 || mc.player.isHoldingOntoLadder()
-                || !lagTimer.passedMs(1000)
+                || !lagTimer.passed(1000)
                 || mc.player.isFallFlying()
                 || Fly.INSTANCE.isOn()
                 || nullCheck()) {
@@ -111,14 +111,15 @@ public class FastFall extends Module {
         }
     }
 
-    @EventHandler
+    @EventListener
     public void onTimer(TimerEvent event) {
         if (nullCheck()) return;
         if (!mc.player.isOnGround() && useTimer) {
             event.set(timer.getValueFloat());
         }
     }
-    @EventHandler
+
+    @EventListener
     public void onPacket(PacketEvent.Receive event) {
         if (!nullCheck()) {
             if (event.getPacket() instanceof PlayerPositionLookS2CPacket) {
@@ -141,7 +142,6 @@ public class FastFall extends Module {
                     RaycastContext.FluidHandling.NONE,
                     mc.player
             ));
-
 
             if (trace != null && trace.getType() == HitResult.Type.BLOCK) return retval;
 

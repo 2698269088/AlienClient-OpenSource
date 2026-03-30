@@ -1,17 +1,16 @@
 package dev.luminous.mod.modules.impl.combat;
 
-import dev.luminous.api.utils.combat.CombatUtil;
-import dev.luminous.api.utils.entity.EntityUtil;
-import dev.luminous.api.utils.entity.InventoryUtil;
-import dev.luminous.api.utils.entity.MovementUtil;
-import dev.luminous.api.utils.math.Timer;
-import dev.luminous.api.utils.world.BlockUtil;
 import dev.luminous.Alien;
-import dev.luminous.core.impl.CommandManager;
+import dev.luminous.api.events.eventbus.EventListener;
+import dev.luminous.api.events.impl.UpdateEvent;
+import dev.luminous.api.utils.combat.CombatUtil;
+import dev.luminous.api.utils.math.Timer;
+import dev.luminous.api.utils.player.EntityUtil;
+import dev.luminous.api.utils.player.InventoryUtil;
+import dev.luminous.api.utils.player.MovementUtil;
+import dev.luminous.api.utils.world.BlockUtil;
 import dev.luminous.mod.modules.Module;
-import dev.luminous.mod.modules.impl.client.AntiCheat;
 import dev.luminous.mod.modules.impl.client.ClientSetting;
-import dev.luminous.mod.modules.settings.Placement;
 import dev.luminous.mod.modules.settings.impl.BooleanSetting;
 import dev.luminous.mod.modules.settings.impl.SliderSetting;
 import net.minecraft.block.Block;
@@ -74,14 +73,6 @@ public class PistonCrystal extends Module {
             add(new BooleanSetting("InventorySwap", true));
     private final BooleanSetting debug =
             add(new BooleanSetting("Debug", false));
-    private PlayerEntity target = null;
-
-    public PistonCrystal() {
-        super("PistonCrystal", Category.Combat);
-        setChinese("活塞水晶");
-        INSTANCE = this;
-    }
-
     private final Timer timer = new Timer();
     private final Timer crystalTimer = new Timer();
     public BlockPos bestPos = null;
@@ -89,9 +80,21 @@ public class PistonCrystal extends Module {
     public Direction bestFacing = null;
     public double distance = 100;
     public boolean getPos = false;
-    private boolean isPiston = false;
     public int stage = 1;
+    private PlayerEntity target = null;
+    private boolean isPiston = false;
+    public PistonCrystal() {
+        super("PistonCrystal", Category.Combat);
+        setChinese("活塞水晶");
+        INSTANCE = this;
+    }
 
+    private static boolean canFire(BlockPos pos) {
+        if (BlockUtil.canReplace(pos.down())) return false;
+        if (!mc.world.isAir(pos)) return false;
+        if (!BlockUtil.canClick(pos.offset(Direction.DOWN))) return false;
+        return BlockUtil.isStrictDirection(pos.down(), Direction.UP);
+    }
 
     public void onTick() {
         if (pistonStage.getValue() > stageSetting.getValue()) {
@@ -134,8 +137,8 @@ public class PistonCrystal extends Module {
         }
     }
 
-    @Override
-    public void onUpdate() {
+    @EventListener
+    public void onUpdate(UpdateEvent event) {
         onTick();
         target = CombatUtil.getClosestEnemy(range.getValue());
         if (target == null) {
@@ -174,7 +177,7 @@ public class PistonCrystal extends Module {
         if (getPos && bestPos != null) {
             timer.reset();
             if (debug.getValue()) {
-                CommandManager.sendChatMessage("[Debug] PistonPos:" + bestPos + " Facing:" + bestFacing + " CrystalPos:" + bestOPos.offset(bestFacing));
+                sendMessage("[Debug] PistonPos:" + bestPos + " Facing:" + bestFacing + " CrystalPos:" + bestOPos.offset(bestFacing));
             }
             doPistonAura(bestPos, bestFacing, bestOPos);
         }
@@ -187,6 +190,7 @@ public class PistonCrystal extends Module {
         if (findClass(PistonBlock.class) == -1) return true;
         return findItem(Items.END_CRYSTAL) == -1;
     }
+
     private boolean checkCrystal(BlockPos pos) {
         for (Entity entity : BlockUtil.getEntities(new Box(pos))) {
             if (entity instanceof EndCrystalEntity) {
@@ -254,13 +258,13 @@ public class PistonCrystal extends Module {
         if (!BlockUtil.canPlace(pos, placeRange.getValue()) && !isPiston(pos, facing)) {
             return;
         }
-        if (!(MathHelper.sqrt((float) EntityUtil.getEyesPos().squaredDistanceTo(pos.toCenterPos())) < distance || bestPos == null)) {
+        if (!(MathHelper.sqrt((float) mc.player.getEyePos().squaredDistanceTo(pos.toCenterPos())) < distance || bestPos == null)) {
             return;
         }
         bestPos = pos;
         bestOPos = oPos;
         bestFacing = facing;
-        distance = MathHelper.sqrt((float) EntityUtil.getEyesPos().squaredDistanceTo(pos.toCenterPos()));
+        distance = MathHelper.sqrt((float) mc.player.getEyePos().squaredDistanceTo(pos.toCenterPos()));
         getPos = true;
         crystalTimer.reset();
     }
@@ -372,13 +376,6 @@ public class PistonCrystal extends Module {
         BlockUtil.clickBlock(neighbour, Direction.UP, this.rotate.getValue());
     }
 
-    private static boolean canFire(BlockPos pos) {
-        if (BlockUtil.canReplace(pos.down())) return false;
-        if (!mc.world.isAir(pos)) return false;
-        if (!BlockUtil.canClick(pos.offset(Direction.DOWN))) return false;
-        return AntiCheat.INSTANCE.placement.getValue() != Placement.Strict || BlockUtil.isStrictDirection(pos.down(), Direction.UP);
-    }
-
     private void doRedStone(BlockPos pos, Direction facing, BlockPos crystalPos) {
         if (!mc.world.isAir(pos.offset(facing, -1)) && getBlock(pos.offset(facing, -1)) != Blocks.FIRE && getBlock(pos.offset(facing.getOpposite())) != Blocks.MOVING_PISTON)
             return;
@@ -422,6 +419,7 @@ public class PistonCrystal extends Module {
             InventoryUtil.switchToSlot(slot);
         }
     }
+
     public int findItem(Item itemIn) {
         if (inventory.getValue()) {
             return InventoryUtil.findItemInventorySlot(itemIn);
@@ -429,6 +427,7 @@ public class PistonCrystal extends Module {
             return InventoryUtil.findItem(itemIn);
         }
     }
+
     public int findBlock(Block blockIn) {
         if (inventory.getValue()) {
             return InventoryUtil.findBlockInventorySlot(blockIn);
@@ -436,13 +435,15 @@ public class PistonCrystal extends Module {
             return InventoryUtil.findBlock(blockIn);
         }
     }
-    public int findClass(Class clazz) {
+
+    public int findClass(Class<?> clazz) {
         if (inventory.getValue()) {
             return InventoryUtil.findClassInventorySlot(clazz);
         } else {
             return InventoryUtil.findClass(clazz);
         }
     }
+
     private Block getBlock(BlockPos pos) {
         return mc.world.getBlockState(pos).getBlock();
     }

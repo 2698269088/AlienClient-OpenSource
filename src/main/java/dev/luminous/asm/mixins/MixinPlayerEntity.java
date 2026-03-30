@@ -1,11 +1,12 @@
 package dev.luminous.asm.mixins;
 
+import dev.luminous.Alien;
 import dev.luminous.api.events.Event;
 import dev.luminous.api.events.impl.JumpEvent;
 import dev.luminous.api.events.impl.TravelEvent;
 import dev.luminous.api.utils.Wrapper;
-import dev.luminous.Alien;
 import dev.luminous.mod.modules.impl.client.ClientSetting;
+import dev.luminous.mod.modules.impl.player.InteractTweaks;
 import net.minecraft.entity.EntityPose;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.util.math.Vec3d;
@@ -20,43 +21,59 @@ public class MixinPlayerEntity implements Wrapper {
 
     @Inject(method = "canChangeIntoPose", at = @At("RETURN"), cancellable = true)
     private void poseNotCollide(EntityPose pose, CallbackInfoReturnable<Boolean> cir) {
-        if ((PlayerEntity) (Object) this == mc.player && !ClientSetting.INSTANCE.crawl.getValue() && pose == EntityPose.SWIMMING) {
-            cir.setReturnValue(false);
+        if (PlayerEntity.class.cast(this) == mc.player) {
+            if (!ClientSetting.INSTANCE.crawl.getValue() && pose == EntityPose.SWIMMING) {
+                cir.setReturnValue(false);
+            }
+        }
+    }
+
+    @Inject(method = "getBlockInteractionRange", at = @At("HEAD"), cancellable = true)
+    public void getBlockInteractionRangeHook(CallbackInfoReturnable<Double> cir) {
+        if (InteractTweaks.INSTANCE.reach()) {
+            cir.setReturnValue(InteractTweaks.INSTANCE.blockRange.getValue());
+        }
+    }
+
+    @Inject(method = "getEntityInteractionRange", at = @At("HEAD"), cancellable = true)
+    public void getEntityInteractionRangeHook(CallbackInfoReturnable<Double> cir) {
+        if (InteractTweaks.INSTANCE.reach()) {
+            cir.setReturnValue(InteractTweaks.INSTANCE.entityRange.getValue());
         }
     }
 
     @Inject(method = "jump", at = @At("HEAD"))
     private void onJumpPre(CallbackInfo ci) {
-        Alien.EVENT_BUS.post(new JumpEvent(Event.Stage.Pre));
+        Alien.EVENT_BUS.post(JumpEvent.get(Event.Stage.Pre));
     }
 
     @Inject(method = "jump", at = @At("RETURN"))
     private void onJumpPost(CallbackInfo ci) {
-        Alien.EVENT_BUS.post(new JumpEvent(Event.Stage.Post));
+        Alien.EVENT_BUS.post(JumpEvent.get(Event.Stage.Post));
     }
 
     @Inject(method = "travel", at = @At("HEAD"), cancellable = true)
     private void onTravelPre(Vec3d movementInput, CallbackInfo ci) {
-        PlayerEntity player = (PlayerEntity) (Object) this;
-        if(player != mc.player)
+        PlayerEntity player = PlayerEntity.class.cast(this);
+        if (player != mc.player)
             return;
 
-        TravelEvent event = new TravelEvent(Event.Stage.Pre, player);
+        TravelEvent event = TravelEvent.get(Event.Stage.Pre, player);
         Alien.EVENT_BUS.post(event);
         if (event.isCancelled()) {
             ci.cancel();
-            event = new TravelEvent(Event.Stage.Post, player);
+            event = TravelEvent.get(Event.Stage.Post, player);
             Alien.EVENT_BUS.post(event);
         }
     }
 
     @Inject(method = "travel", at = @At("RETURN"))
     private void onTravelPost(Vec3d movementInput, CallbackInfo ci) {
-        PlayerEntity player = (PlayerEntity) (Object) this;
-        if(player != mc.player)
+        PlayerEntity player = PlayerEntity.class.cast(this);
+        if (player != mc.player)
             return;
 
-        TravelEvent event = new TravelEvent(Event.Stage.Post, player);
+        TravelEvent event = TravelEvent.get(Event.Stage.Post, player);
         Alien.EVENT_BUS.post(event);
     }
 }

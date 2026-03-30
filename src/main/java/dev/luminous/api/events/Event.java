@@ -1,8 +1,13 @@
 package dev.luminous.api.events;
 
 public class Event {
-    private final Stage stage;
+    public Stage stage;
     private boolean cancel;
+
+    public Event() {
+        this(Stage.Pre);
+    }
+
     public Event(Stage stage) {
         this.cancel = false;
         this.stage = stage;
@@ -12,16 +17,12 @@ public class Event {
         setCancelled(true);
     }
 
-    public void setCancelled(boolean cancel) {
-        this.cancel = cancel;
-    }
-
     public boolean isCancelled() {
         return cancel;
     }
 
-    public Stage getStage() {
-        return stage;
+    public void setCancelled(boolean cancel) {
+        this.cancel = cancel;
     }
 
     public boolean isPost() {
@@ -32,7 +33,7 @@ public class Event {
         return stage == Stage.Pre;
     }
 
-    public enum Stage{
+    public enum Stage {
         Pre, Post
     }
 }

@@ -1,9 +1,11 @@
 package dev.luminous.mod.modules.impl.misc;
 
 import dev.luminous.Alien;
-import dev.luminous.api.utils.entity.EntityUtil;
-import dev.luminous.api.utils.entity.InventoryUtil;
+import dev.luminous.api.events.eventbus.EventListener;
+import dev.luminous.api.events.impl.UpdateEvent;
 import dev.luminous.api.utils.math.Timer;
+import dev.luminous.api.utils.player.EntityUtil;
+import dev.luminous.api.utils.player.InventoryUtil;
 import dev.luminous.api.utils.world.BlockUtil;
 import dev.luminous.mod.modules.Module;
 import dev.luminous.mod.modules.settings.impl.BooleanSetting;
@@ -13,12 +15,12 @@ import net.minecraft.fluid.LavaFluid;
 import net.minecraft.util.math.BlockPos;
 
 public class LavaFiller extends Module {
+    public final SliderSetting placeDelay =
+            add(new SliderSetting("PlaceDelay", 50, 0, 500).setSuffix("ms"));
     private final BooleanSetting inventory =
             add(new BooleanSetting("InventorySwap", true));
     private final SliderSetting range =
-            add(new SliderSetting("Range", 5, 0, 8,.1));
-    public final SliderSetting placeDelay =
-            add(new SliderSetting("PlaceDelay", 50, 0, 500).setSuffix("ms"));
+            add(new SliderSetting("Range", 5, 0, 8, .1));
     private final SliderSetting blocksPer =
             add(new SliderSetting("BlocksPer", 1, 1, 8));
     private final BooleanSetting detectMining =
@@ -32,14 +34,16 @@ public class LavaFiller extends Module {
     private final Timer timer = new Timer();
 
     int progress = 0;
+
     public LavaFiller() {
         super("LavaFiller", Category.Misc);
         setChinese("自动填岩浆");
     }
 
-    @Override
-    public void onUpdate() {
-        if (!timer.passedMs((long) placeDelay.getValue())) return;
+    @EventListener
+    public void onUpdate(UpdateEvent event) {
+        if (!timer.passed((long) placeDelay.getValue())) return;
+        if (inventory.getValue() && !EntityUtil.inInventory()) return;
         progress = 0;
 
         if (getBlock() == -1) {
@@ -56,7 +60,6 @@ public class LavaFiller extends Module {
             }
         }
     }
-
 
     private void tryPlaceBlock(BlockPos pos) {
         if (pos == null) return;

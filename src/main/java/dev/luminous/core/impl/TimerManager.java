@@ -5,13 +5,13 @@ import dev.luminous.mod.modules.impl.player.TimerModule;
 public class TimerManager {
 
     public float timer = 1f;
+    public float lastTimer;
 
     public void set(float factor) {
         if (factor < 0.1f) factor = 0.1f;
         timer = factor;
     }
 
-    public float lastTimer;
     public void reset() {
         timer = getDefault();
         lastTimer = timer;

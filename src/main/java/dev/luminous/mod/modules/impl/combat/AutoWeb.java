@@ -1,23 +1,26 @@
 package dev.luminous.mod.modules.impl.combat;
 
-import dev.luminous.api.events.eventbus.EventHandler;
-import dev.luminous.api.events.impl.LookAtEvent;
-import dev.luminous.api.events.impl.UpdateWalkingPlayerEvent;
+import dev.luminous.Alien;
+import dev.luminous.api.events.eventbus.EventListener;
+import dev.luminous.api.events.impl.ClientTickEvent;
+import dev.luminous.api.events.impl.RotationEvent;
 import dev.luminous.api.utils.combat.CombatUtil;
-import dev.luminous.api.utils.entity.EntityUtil;
-import dev.luminous.api.utils.entity.InventoryUtil;
+import dev.luminous.api.utils.math.PredictUtil;
 import dev.luminous.api.utils.math.Timer;
+import dev.luminous.api.utils.player.EntityUtil;
+import dev.luminous.api.utils.player.InventoryUtil;
 import dev.luminous.api.utils.world.BlockPosX;
 import dev.luminous.api.utils.world.BlockUtil;
-import dev.luminous.Alien;
 import dev.luminous.mod.modules.Module;
 import dev.luminous.mod.modules.impl.client.AntiCheat;
 import dev.luminous.mod.modules.impl.exploit.Blink;
+import dev.luminous.mod.modules.impl.movement.ElytraFly;
+import dev.luminous.mod.modules.impl.movement.Velocity;
+import dev.luminous.mod.modules.settings.enums.Timing;
 import dev.luminous.mod.modules.settings.impl.BooleanSetting;
 import dev.luminous.mod.modules.settings.impl.EnumSetting;
 import dev.luminous.mod.modules.settings.impl.SliderSetting;
 import net.minecraft.block.Blocks;
-import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.network.packet.c2s.play.PlayerInteractBlockC2SPacket;
 import net.minecraft.util.Hand;
@@ -34,12 +37,8 @@ import static dev.luminous.api.utils.world.BlockUtil.*;
 
 public class AutoWeb extends Module {
     public static AutoWeb INSTANCE;
-    public AutoWeb() {
-        super("AutoWeb", Category.Combat);
-        setChinese("蜘蛛网光环");
-        INSTANCE = this;
-    }
-
+    public static boolean force = false;
+    public static boolean ignore = false;
     public final EnumSetting<Page> page = add(new EnumSetting<>("Page", Page.General));
     public final SliderSetting placeDelay =
             add(new SliderSetting("PlaceDelay", 50, 0, 500, () -> page.getValue() == Page.General));
@@ -47,43 +46,54 @@ public class AutoWeb extends Module {
             add(new SliderSetting("BlocksPer", 2, 1, 10, () -> page.getValue() == Page.General));
     public final SliderSetting predictTicks =
             add(new SliderSetting("PredictTicks", 2, 0.0, 50, 1, () -> page.getValue() == Page.General));
-    private final BooleanSetting preferAnchor = add(new BooleanSetting("PreferAnchor", true, () -> page.getValue() == Page.General));
-    private final BooleanSetting detectMining =
-            add(new BooleanSetting("DetectMining", true, () -> page.getValue() == Page.General));
-    private final BooleanSetting onlyTick =
-            add(new BooleanSetting("OnlyTick", false, () -> page.getValue() == Page.General));
-    private final BooleanSetting feet =
-            add(new BooleanSetting("Feet", true, () -> page.getValue() == Page.General));
-    private final BooleanSetting face =
-            add(new BooleanSetting("Face", true, () -> page.getValue() == Page.General));
     public final SliderSetting maxWebs =
             add(new SliderSetting("MaxWebs", 2, 1, 8, 1, () -> page.getValue() == Page.General));
-    private final BooleanSetting down =
-            add(new BooleanSetting("Down", true, () -> page.getValue() == Page.General));
-    private final BooleanSetting inventorySwap =
-            add(new BooleanSetting("InventorySwap", true, () -> page.getValue() == Page.General));
-    private final BooleanSetting usingPause =
-            add(new BooleanSetting("UsingPause", true, () -> page.getValue() == Page.General));
     public final SliderSetting offset =
             add(new SliderSetting("Offset", 0.25, 0.0, 0.3, 0.01, () -> page.getValue() == Page.General));
     public final SliderSetting placeRange =
             add(new SliderSetting("PlaceRange", 5.0, 0.0, 6.0, 0.1, () -> page.getValue() == Page.General));
     public final SliderSetting targetRange =
             add(new SliderSetting("TargetRange", 8.0, 0.0, 8.0, 0.1, () -> page.getValue() == Page.General));
-
+    final ArrayList<BlockPos> pos = new ArrayList<>();
+    private final BooleanSetting preferAnchor = add(new BooleanSetting("PreferAnchor", true, () -> page.getValue() == Page.General));
+    private final BooleanSetting detectMining =
+            add(new BooleanSetting("DetectMining", true, () -> page.getValue() == Page.General));
+    private final EnumSetting<Timing> timing =
+            add(new EnumSetting<>("Timing", Timing.All, () -> page.getValue() == Page.General));
+    private final BooleanSetting feet =
+            add(new BooleanSetting("Feet", true, () -> page.getValue() == Page.General));
+    private final BooleanSetting feetExtend =
+            add(new BooleanSetting("FeetExtend", true, () -> page.getValue() == Page.General));
+    private final BooleanSetting face =
+            add(new BooleanSetting("Face", true, () -> page.getValue() == Page.General));
+    private final BooleanSetting down =
+            add(new BooleanSetting("Down", true, () -> page.getValue() == Page.General));
+    private final BooleanSetting inventorySwap =
+            add(new BooleanSetting("InventorySwap", true, () -> page.getValue() == Page.General));
+    private final BooleanSetting usingPause =
+            add(new BooleanSetting("UsingPause", true, () -> page.getValue() == Page.General));
     private final BooleanSetting rotate =
             add(new BooleanSetting("Rotate", true, () -> page.getValue() == Page.Rotate).setParent());
     private final BooleanSetting yawStep =
-            add(new BooleanSetting("YawStep", false, () -> rotate.isOpen() && page.getValue() == Page.Rotate));
+            add(new BooleanSetting("YawStep", false, () -> rotate.isOpen() && page.getValue() == Page.Rotate).setParent());
+    private final BooleanSetting whenElytra =
+            add(new BooleanSetting("FallFlying", true, () -> rotate.isOpen() && yawStep.isOpen() && page.getValue() == Page.Rotate));
     private final SliderSetting steps =
-            add(new SliderSetting("Steps", 0.3, 0.1, 1.0, 0.01, () -> rotate.isOpen() && yawStep.getValue() && page.getValue() == Page.Rotate));
+            add(new SliderSetting("Steps", 0.3, 0.1, 1.0, 0.01, () -> rotate.isOpen() && yawStep.isOpen() && page.getValue() == Page.Rotate));
     private final BooleanSetting checkFov =
-            add(new BooleanSetting("OnlyLooking", true, () -> rotate.isOpen() && yawStep.getValue() && page.getValue() == Page.Rotate));
+            add(new BooleanSetting("OnlyLooking", true, () -> rotate.isOpen() && yawStep.isOpen() && page.getValue() == Page.Rotate));
     private final SliderSetting fov =
-            add(new SliderSetting("Fov", 30, 0, 50, () -> rotate.isOpen() && yawStep.getValue() && checkFov.getValue() && page.getValue() == Page.Rotate));
-    private final SliderSetting priority = add(new SliderSetting("Priority", 10,0 ,100, () ->rotate.isOpen() && yawStep.getValue() && page.getValue() == Page.Rotate));
+            add(new SliderSetting("Fov", 20, 0, 360, 0.1, () -> rotate.isOpen() && yawStep.isOpen() && checkFov.getValue() && page.getValue() == Page.Rotate));
+    private final SliderSetting priority = add(new SliderSetting("Priority", 10, 0, 100, () -> rotate.isOpen() && yawStep.isOpen() && page.getValue() == Page.Rotate));
     private final Timer timer = new Timer();
     public Vec3d directionVec = null;
+    int progress = 0;
+
+    public AutoWeb() {
+        super("AutoWeb", Category.Combat);
+        setChinese("蜘蛛网光环");
+        INSTANCE = this;
+    }
 
     @Override
     public String getInfo() {
@@ -91,47 +101,38 @@ public class AutoWeb extends Module {
         return "Working";
     }
 
-    public static boolean force = false;
-    public static boolean ignore = false;
-    @EventHandler
-    public void onRotate(LookAtEvent event) {
-        if (rotate.getValue() && yawStep.getValue() && directionVec != null) {
+    private boolean shouldYawStep() {
+        if (!whenElytra.getValue() && (mc.player.isFallFlying() || ElytraFly.INSTANCE.isOn() && ElytraFly.INSTANCE.isFallFlying()))
+            return false;
+        return yawStep.getValue() && !Velocity.INSTANCE.noRotation();
+    }
+
+    @EventListener
+    public void onRotate(RotationEvent event) {
+        if (rotate.getValue() && shouldYawStep() && directionVec != null) {
             event.setTarget(directionVec, steps.getValueFloat(), priority.getValueFloat());
         }
     }
 
-    @EventHandler
-    public void onUpdateWalking(UpdateWalkingPlayerEvent event) {
-        if (!onlyTick.getValue()) {
-            onUpdate();
-        }
-    }
-    @Override
-    public void onDisable() {
-        force = false;
-    }
-
-    @Override
-    public void onRender3D(MatrixStack matrixStack) {
-        if (!onlyTick.getValue()) {
-            onUpdate();
-        }
-    }
-
-    int progress = 0;
-
-    private final ArrayList<BlockPos> pos = new ArrayList<>();
-    @Override
-    public void onUpdate() {
+    @EventListener
+    public void onTick(ClientTickEvent event) {
+        if (nullCheck()) return;
+        if (timing.is(Timing.Pre) && event.isPost() || timing.is(Timing.Post) && event.isPre()) return;
         if (force) ignore = true;
         update();
         ignore = false;
     }
 
+    @Override
+    public void onDisable() {
+        force = false;
+    }
+
     private void update() {
-        if (!timer.passedMs(placeDelay.getValueInt())) {
+        if (!timer.passed(placeDelay.getValueInt())) {
             return;
         }
+        if (inventorySwap.getValue() && !EntityUtil.inInventory()) return;
         pos.clear();
         progress = 0;
         directionVec = null;
@@ -146,8 +147,13 @@ public class AutoWeb extends Module {
             return;
         }
         for (PlayerEntity player : CombatUtil.getEnemies(targetRange.getValue())) {
-            Vec3d playerPos = predictTicks.getValue() > 0 ? CombatUtil.getEntityPosVec(player, predictTicks.getValueInt()) : player.getPos();
+            Vec3d playerPos = predictTicks.getValue() > 0 ? PredictUtil.getPos(player, predictTicks.getValueInt()) : player.getPos();
             int webs = 0;
+            if (feet.getValue()) {
+                if (placeWeb(new BlockPosX(playerPos.getX(), playerPos.getY(), playerPos.getZ()))) {
+                    webs++;
+                }
+            }
             if (down.getValue()) {
                 placeWeb(new BlockPosX(playerPos.getX(), playerPos.getY() - 0.8, playerPos.getZ()));
             }
@@ -169,7 +175,7 @@ public class AutoWeb extends Module {
                 continue;
             }
             boolean skip = false;
-            if (feet.getValue()) {
+            if (feetExtend.getValue()) {
                 start:
                 for (float x : new float[]{0, offset.getValueFloat(), -offset.getValueFloat()}) {
                     for (float z : new float[]{0, offset.getValueFloat(), -offset.getValueFloat()}) {
@@ -205,9 +211,11 @@ public class AutoWeb extends Module {
             }
         }
     }
+
     private boolean isTargetHere(BlockPos pos, PlayerEntity target) {
         return new Box(pos).intersects(target.getBoundingBox());
     }
+
     private boolean placeWeb(BlockPos pos) {
         if (this.pos.contains(pos)) return false;
         this.pos.add(pos);
@@ -235,11 +243,10 @@ public class AutoWeb extends Module {
         return false;
     }
 
-
     public boolean placeBlock(BlockPos pos, boolean rotate, int slot) {
         Direction side = getPlaceSide(pos);
         if (side == null) {
-            if (airPlace()) {
+            if (allowAirPlace()) {
                 return clickBlock(pos, Direction.DOWN, rotate, slot);
             }
             return false;
@@ -253,17 +260,17 @@ public class AutoWeb extends Module {
             if (!faceVector(directionVec)) return false;
         }
         doSwap(slot);
-        EntityUtil.swingHand(Hand.MAIN_HAND, AntiCheat.INSTANCE.swingMode.getValue());
+        EntityUtil.swingHand(Hand.MAIN_HAND, AntiCheat.INSTANCE.interactSwing.getValue());
         BlockHitResult result = new BlockHitResult(directionVec, side, pos, false);
         Module.sendSequencedPacket(id -> new PlayerInteractBlockC2SPacket(Hand.MAIN_HAND, result, id));
-        if (rotate && !yawStep.getValue() && AntiCheat.INSTANCE.snapBack.getValue()) {
+        if (rotate && !shouldYawStep()) {
             Alien.ROTATION.snapBack();
         }
         return true;
     }
 
     private boolean faceVector(Vec3d directionVec) {
-        if (!yawStep.getValue()) {
+        if (!shouldYawStep()) {
             Alien.ROTATION.lookAt(directionVec);
             return true;
         } else {

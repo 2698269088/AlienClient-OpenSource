@@ -1,17 +1,17 @@
 package dev.luminous.mod.modules.impl.movement;
 
-import dev.luminous.api.events.eventbus.EventHandler;
+import dev.luminous.api.events.eventbus.EventListener;
 import dev.luminous.api.events.impl.MoveEvent;
-import dev.luminous.api.utils.entity.MovementUtil;
-import dev.luminous.Alien;
+import dev.luminous.api.utils.path.BaritoneUtil;
+import dev.luminous.api.utils.player.EntityUtil;
+import dev.luminous.api.utils.player.MovementUtil;
 import dev.luminous.mod.modules.Module;
-import dev.luminous.mod.modules.impl.client.BaritoneModule;
 import dev.luminous.mod.modules.settings.impl.BooleanSetting;
 import net.minecraft.entity.effect.StatusEffects;
 
 import java.util.Objects;
 
-import static dev.luminous.api.utils.entity.MovementUtil.directionSpeed;
+import static dev.luminous.api.utils.player.MovementUtil.directionSpeed;
 
 public class Strafe
         extends Module {
@@ -27,10 +27,10 @@ public class Strafe
         INSTANCE = this;
     }
 
-    @EventHandler
+    @EventListener
     public void onStrafe(MoveEvent event) {
-        if (BaritoneModule.isActive()) return;
-        if (mc.player.isSneaking() || HoleSnap.INSTANCE.isOn() || Speed.INSTANCE.isOn() || mc.player.isFallFlying() || Alien.PLAYER.insideBlock || mc.player.isInLava() || mc.player.isTouchingWater() || mc.player.getAbilities().flying)
+        if (BaritoneUtil.isActive()) return;
+        if (mc.player.isSneaking() || Fly.INSTANCE.isOn() || HoleSnap.INSTANCE.isOn() || Speed.INSTANCE.isOn() || mc.player.isFallFlying() || EntityUtil.isInsideBlock() || mc.player.isInLava() || mc.player.isTouchingWater() || mc.player.getAbilities().flying)
             return;
         if (!MovementUtil.isMoving()) {
             if (airStop.getValue()) {

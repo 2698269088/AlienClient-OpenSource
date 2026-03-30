@@ -5,14 +5,11 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 
 public class ClickBlockEvent extends Event {
-    private final BlockPos pos;
-    private final Direction direction;
-
-    public ClickBlockEvent(BlockPos pos, Direction direction) {
-        super(Stage.Pre);
-        this.pos = pos;
-        this.direction = direction;
+    private ClickBlockEvent() {
     }
+
+    private BlockPos pos;
+    private Direction direction;
 
     public Direction getDirection() {
         return direction;
@@ -20,6 +17,15 @@ public class ClickBlockEvent extends Event {
 
     public BlockPos getPos() {
         return pos;
+    }
+
+    private static final ClickBlockEvent INSTANCE = new ClickBlockEvent();
+
+    public static ClickBlockEvent get(BlockPos pos, Direction direction) {
+        INSTANCE.pos = pos;
+        INSTANCE.direction = direction;
+        INSTANCE.setCancelled(false);
+        return INSTANCE;
     }
 }
 

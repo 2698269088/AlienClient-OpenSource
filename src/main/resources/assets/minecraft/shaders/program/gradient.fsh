@@ -10,44 +10,15 @@ uniform float radius;
 uniform float divider;
 uniform float maxSample;
 
-uniform vec2 InSize;
-
 uniform float alpha2;
+uniform vec3 rgb;
+uniform vec3 rgb1;
+uniform vec3 rgb2;
+uniform vec3 rgb3;
 
+uniform float step;
 uniform vec2 resolution;
 uniform float time;
-uniform int oct;
-
-
-uniform float factor;
-uniform float moreGradient;
-
-
-float random(vec2 pos) {
-    return fract(sin(dot(pos.xy, vec2(12.9898, 78.233))) * 43758.5453123);
-}
-
-float noise(vec2 pos) {
-    vec2 i = floor(pos);
-    vec2 f = fract(pos);
-    float a = random(i + vec2(0.0, 0.0));
-    float b = random(i + vec2(1.0, 0.0));
-    float c = random(i + vec2(0.0, 1.0));
-    float d = random(i + vec2(1.0, 1.0));
-    vec2 u = f * f * (3.0 - 2.0 * f);
-    return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
-}
-
-float fbm(vec2 pos) {
-    float v = 0.0;
-    float a = 0.5;
-    mat2 rot = mat2(cos(0.1), sin(0.5), -sin(0.5), cos(0.5));
-    for (int i=0; i < oct; i++) {
-        v += a * noise(pos);
-        a *= 0.5;
-    }
-    return v;
-}
 
 float glowShader() {
 
@@ -67,19 +38,26 @@ float glowShader() {
 }
 
 vec3 getColor(vec4 centerCol) {
-    float minrz = min(resolution.x, resolution.y);
-    vec2 p = (((vec2(2.0, 2.0) * gl_FragCoord.xy) - resolution.xy) * vec2((moreGradient / min(resolution.x, resolution.y)), (moreGradient / min(resolution.x, resolution.y))));
+    float distance = sqrt(gl_FragCoord.x * gl_FragCoord.x + gl_FragCoord.y * gl_FragCoord.y) + time;
+    float distance2 = sqrt((gl_FragCoord.x - 1920.0) * (gl_FragCoord.x - 1920.0) + gl_FragCoord.y * gl_FragCoord.y) + time;
+    float distance3 = sqrt((gl_FragCoord.x - 1080.0) * (gl_FragCoord.x - 1080.0) + (gl_FragCoord.y - 1080.0) * (gl_FragCoord.y - 1080.0)) + time;
 
-    float t = 0.0;
+    distance = sin(distance / step + sin(gl_FragCoord.y / step)) * 0.5 + 0.5;
+    distance2 = sin(distance2 / step + sin(gl_FragCoord.x / step)) * 0.5 + 0.5;
+    distance3 = sin(distance3 / step + sin(gl_FragCoord.y / step + gl_FragCoord.x / step)) * 0.5 + 0.5;
 
-    float time2 = 3.0 * time / 2.0;
+    float ripple = sin(distance * 10 + step * 10000) * 0.05;
+    float swirl = cos((gl_FragCoord.x - 960.0) * 0.05 + (gl_FragCoord.y - 540.0) * 0.05 + step) * 0.05;
 
-    vec2 q = vec2(0.0);
-    q.x = fbm(p + 0.00);
-    q.y = fbm(p + vec2(1.0));
+    distance += ripple + swirl;
+    distance2 += ripple - swirl;
+    distance3 += ripple + swirl;
 
-    vec4 temp = vec4(vec3(noise(p + vec2(1.0)), noise(p + factor * q + vec2(1.7, 9.2) + 0.15 * time2), noise(p + factor * q + vec2(8.3, 2.8) + 0.126 * time2)), alpha2);
-    return vec3(temp[0], temp[1], temp[2]);
+    float distanceInv = 1.0 - distance;
+    float r = rgb.r * distance + rgb1.r * distanceInv + rgb2.r * distance2 + rgb3.r * distance3;
+    float g = rgb.g * distance + rgb1.g * distanceInv + rgb2.g * distance2 + rgb3.g * distance3;
+    float b = rgb.b * distance + rgb1.b * distanceInv + rgb2.b * distance2 + rgb3.b * distance3;
+    return vec3(r, g, b);
 }
 
 void main() {

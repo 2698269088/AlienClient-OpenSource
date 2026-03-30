@@ -1,17 +1,20 @@
 package dev.luminous.api.events.impl;
 
-import dev.luminous.api.events.Event;
 import net.minecraft.entity.player.PlayerEntity;
 
-public class DeathEvent extends Event {
-    private final PlayerEntity player;
+public class DeathEvent {
+    private DeathEvent() {
+    }
 
-    public DeathEvent(PlayerEntity player) {
-        super(Stage.Post);
-        this.player = player;
+    private static final DeathEvent INSTANCE = new DeathEvent();
+    private PlayerEntity player;
+
+    public static DeathEvent get(PlayerEntity player) {
+        INSTANCE.player = player;
+        return INSTANCE;
     }
 
     public PlayerEntity getPlayer() {
-        return this.player;
+        return player;
     }
 }

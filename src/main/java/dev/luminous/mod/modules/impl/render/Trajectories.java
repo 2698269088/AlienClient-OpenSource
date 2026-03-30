@@ -1,8 +1,11 @@
 package dev.luminous.mod.modules.impl.render;
 
 import com.mojang.blaze3d.systems.RenderSystem;
+import dev.luminous.Alien;
 import dev.luminous.api.utils.math.MathUtil;
+import dev.luminous.api.utils.render.ColorUtil;
 import dev.luminous.api.utils.render.Render3DUtil;
+import dev.luminous.mod.modules.Module;
 import dev.luminous.mod.modules.impl.player.AutoPearl;
 import dev.luminous.mod.modules.settings.impl.ColorSetting;
 import net.minecraft.block.Blocks;
@@ -11,6 +14,8 @@ import net.minecraft.enchantment.EnchantmentHelper;
 import net.minecraft.enchantment.Enchantments;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.projectile.ArrowEntity;
+import net.minecraft.entity.projectile.thrown.EnderPearlEntity;
+import net.minecraft.entity.projectile.thrown.ExperienceBottleEntity;
 import net.minecraft.item.*;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
@@ -20,73 +25,115 @@ import net.minecraft.util.math.Box;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.RaycastContext;
-import dev.luminous.mod.modules.Module;
 
 import java.awt.*;
 
 public class Trajectories extends Module {
+    static MatrixStack matrixStack;
+    private final ColorSetting hand = add(new ColorSetting("Hand", new Color(255, 255, 255, 255)).injectBoolean(true));
+    private final ColorSetting pearl = add(new ColorSetting("Pearl", new Color(255, 255, 255, 255)).injectBoolean(true));
+    private final ColorSetting arrow = add(new ColorSetting("Arrow", new Color(255, 255, 255, 255)).injectBoolean(true));
+    private final ColorSetting xp = add(new ColorSetting("XP", new Color(255, 255, 255, 255)).injectBoolean(true));
+
     public Trajectories() {
         super("Trajectories", Category.Render);
         setChinese("抛物线预测");
     }
 
-    private final ColorSetting color = add(new ColorSetting("Color", new Color(255, 255, 255, 255)));
-
-    private boolean isThrowable(Item item) {
-        return item instanceof EnderPearlItem || item instanceof TridentItem || item instanceof ExperienceBottleItem || item instanceof SnowballItem || item instanceof EggItem || item instanceof SplashPotionItem || item instanceof LingeringPotionItem;
-    }
-
-    private float getDistance(Item item) {
-        return item instanceof BowItem ? 1.0f : 0.4f;
-    }
-
-    private float getThrowVelocity(Item item) {
-        if (item instanceof SplashPotionItem || item instanceof LingeringPotionItem) return 0.5f;
-        if (item instanceof ExperienceBottleItem) return 0.59f;
-        if (item instanceof TridentItem) return 2f;
-        return 1.5f;
-    }
-
-    private int getThrowPitch(Item item) {
-        if (item instanceof SplashPotionItem || item instanceof LingeringPotionItem || item instanceof ExperienceBottleItem)
-            return 20;
-        return 0;
-    }
-
-    static MatrixStack matrixStack;
-
     @Override
     public void onRender3D(MatrixStack matrixStack) {
+        if (nullCheck()) return;
         Trajectories.matrixStack = matrixStack;
-        if (mc.player == null || mc.world == null || !mc.options.getPerspective().isFirstPerson())
-            return;
-        Hand hand;
+        if (pearl.booleanValue || arrow.booleanValue || xp.booleanValue) {
+            RenderSystem.disableDepthTest();
+            for (Entity en : Alien.THREAD.getEntities()) {
+                if (en instanceof EnderPearlEntity && pearl.booleanValue)
+                    calcTrajectory(en, pearl.getValue());
 
-        ItemStack mainHand = mc.player.getMainHandStack();
-        ItemStack offHand = mc.player.getOffHandStack();
+                if (en instanceof ArrowEntity && arrow.booleanValue)
+                    calcTrajectory(en, arrow.getValue());
 
-        if (mainHand.getItem() instanceof BowItem || mainHand.getItem() instanceof CrossbowItem || isThrowable(mainHand.getItem()) || AutoPearl.INSTANCE.isOn()) {
-            hand = Hand.MAIN_HAND;
-        } else if (offHand.getItem() instanceof BowItem || offHand.getItem() instanceof CrossbowItem || isThrowable(offHand.getItem())) {
-            hand = Hand.OFF_HAND;
-        } else return;
-        RenderSystem.disableDepthTest();
-        boolean prev_bob = mc.options.getBobView().getValue();
-        mc.options.getBobView().setValue(false);
-        double x = MathUtil.interpolate(mc.player.prevX, mc.player.getX(), mc.getTickDelta());
-        double y = MathUtil.interpolate(mc.player.prevY, mc.player.getY(), mc.getTickDelta());
-        double z = MathUtil.interpolate(mc.player.prevZ, mc.player.getZ(), mc.getTickDelta());
-        if ((offHand.getItem() instanceof CrossbowItem && EnchantmentHelper.getLevel(Enchantments.MULTISHOT, offHand) != 0) ||
-                (mainHand.getItem() instanceof CrossbowItem && EnchantmentHelper.getLevel(Enchantments.MULTISHOT, mainHand) != 0)) {
+                if (en instanceof ExperienceBottleEntity && xp.booleanValue)
+                    calcTrajectory(en, xp.getValue());
+            }
+            RenderSystem.enableDepthTest();
+        }
+        if (hand.booleanValue) {
+            if (!mc.options.getPerspective().isFirstPerson())
+                return;
+            Hand hand;
 
-            calcTrajectory(hand == Hand.OFF_HAND ? offHand.getItem() : mainHand.getItem(), mc.player.getYaw() - 10, x, y, z);
-            calcTrajectory(hand == Hand.OFF_HAND ? offHand.getItem() : mainHand.getItem(), mc.player.getYaw(), x, y, z);
-            calcTrajectory(hand == Hand.OFF_HAND ? offHand.getItem() : mainHand.getItem(), mc.player.getYaw() + 10, x, y, z);
+            ItemStack mainHand = mc.player.getMainHandStack();
+            ItemStack offHand = mc.player.getOffHandStack();
 
-        } else
-            calcTrajectory(hand == Hand.OFF_HAND ? offHand.getItem() : mainHand.getItem(), mc.player.getYaw(), x, y, z);
-        mc.options.getBobView().setValue(prev_bob);
-        RenderSystem.enableDepthTest();
+            if (mainHand.getItem() instanceof BowItem || mainHand.getItem() instanceof CrossbowItem || isThrowable(mainHand.getItem()) || AutoPearl.INSTANCE.isOn()) {
+                hand = Hand.MAIN_HAND;
+            } else if (offHand.getItem() instanceof BowItem || offHand.getItem() instanceof CrossbowItem || isThrowable(offHand.getItem())) {
+                hand = Hand.OFF_HAND;
+            } else return;
+            RenderSystem.disableDepthTest();
+            boolean prev_bob = mc.options.getBobView().getValue();
+            mc.options.getBobView().setValue(false);
+            double x = MathUtil.interpolate(mc.player.prevX, mc.player.getX(), mc.getRenderTickCounter().getTickDelta(true));
+            double y = MathUtil.interpolate(mc.player.prevY, mc.player.getY(), mc.getRenderTickCounter().getTickDelta(true));
+            double z = MathUtil.interpolate(mc.player.prevZ, mc.player.getZ(), mc.getRenderTickCounter().getTickDelta(true));
+            if ((offHand.getItem() instanceof CrossbowItem && EnchantmentHelper.getLevel(mc.world.getRegistryManager().get(Enchantments.MULTISHOT.getRegistryRef()).getEntry(Enchantments.MULTISHOT).get(), offHand) != 0) ||
+                    (mainHand.getItem() instanceof CrossbowItem && EnchantmentHelper.getLevel(mc.world.getRegistryManager().get(Enchantments.MULTISHOT.getRegistryRef()).getEntry(Enchantments.MULTISHOT).get(), mainHand) != 0)) {
+
+                calcTrajectory(hand == Hand.OFF_HAND ? offHand.getItem() : mainHand.getItem(), mc.player.getYaw() - 10, x, y, z);
+                calcTrajectory(hand == Hand.OFF_HAND ? offHand.getItem() : mainHand.getItem(), mc.player.getYaw(), x, y, z);
+                calcTrajectory(hand == Hand.OFF_HAND ? offHand.getItem() : mainHand.getItem(), mc.player.getYaw() + 10, x, y, z);
+
+            } else
+                calcTrajectory(hand == Hand.OFF_HAND ? offHand.getItem() : mainHand.getItem(), mc.player.getYaw(), x, y, z);
+            mc.options.getBobView().setValue(prev_bob);
+            RenderSystem.enableDepthTest();
+        }
+    }
+
+    private void calcTrajectory(Entity e, Color color) {
+        double motionX = e.getVelocity().x;
+        double motionY = e.getVelocity().y;
+        double motionZ = e.getVelocity().z;
+        if (motionX == 0 && motionY == 0 && motionZ == 0) return;
+        double x = e.getX();
+        double y = e.getY();
+        double z = e.getZ();
+        Vec3d lastPos;
+        for (int i = 0; i < 300; i++) {
+            lastPos = new Vec3d(x, y, z);
+            x += motionX;
+            y += motionY;
+            z += motionZ;
+            if (mc.world.getBlockState(new BlockPos((int) x, (int) y, (int) z)).getBlock() == Blocks.WATER) {
+                motionX *= 0.8;
+                motionY *= 0.8;
+                motionZ *= 0.8;
+            } else {
+                motionX *= 0.99;
+                motionY *= 0.99;
+                motionZ *= 0.99;
+            }
+            if (e instanceof ArrowEntity) {
+                motionY -= 0.05000000074505806;
+            } else {
+                motionY -= 0.03f;
+            }
+            Vec3d pos = new Vec3d(x, y, z);
+
+            if (mc.world.raycast(new RaycastContext(lastPos, pos, RaycastContext.ShapeType.OUTLINE, RaycastContext.FluidHandling.NONE, mc.player)) != null) {
+                if (mc.world.raycast(new RaycastContext(lastPos, pos, RaycastContext.ShapeType.OUTLINE, RaycastContext.FluidHandling.NONE, mc.player)).getType() == HitResult.Type.ENTITY)
+                    break;
+                if (mc.world.raycast(new RaycastContext(lastPos, pos, RaycastContext.ShapeType.OUTLINE, RaycastContext.FluidHandling.NONE, mc.player)).getType() == HitResult.Type.BLOCK)
+                    break;
+            }
+
+            if (y <= -65) break;
+
+            int alpha = (int) MathUtil.clamp((255f * ((i + 1) / 10f)), 0, 255);
+
+            Render3DUtil.drawLine(lastPos, pos, ColorUtil.injectAlpha(color, alpha));
+        }
     }
 
     private void calcTrajectory(Item item, float yaw, double x, double y, double z) {
@@ -120,10 +167,9 @@ public class Trajectories extends Module {
         motionX *= pow;
         motionY *= pow;
         motionZ *= pow;
-        //motionX += mc.player.getVelocity().getX();
+        motionX += mc.player.getVelocity().getX();
         motionY += mc.player.getVelocity().getY();
-        //motionZ += mc.player.getVelocity().getZ();
-
+        motionZ += mc.player.getVelocity().getZ();
 
         Vec3d lastPos;
         for (int i = 0; i < 300; i++) {
@@ -145,27 +191,47 @@ public class Trajectories extends Module {
             else if (mc.player.getMainHandStack().getItem() instanceof CrossbowItem) motionY -= 0.05000000074505806;
             else motionY -= 0.03f;
 
-
             Vec3d pos = new Vec3d(x, y, z);
 
-            for (Entity ent : mc.world.getEntities()) {
+            for (Entity ent : Alien.THREAD.getEntities()) {
                 if (ent instanceof ArrowEntity || ent.equals(mc.player)) continue;
                 if (ent.getBoundingBox().intersects(new Box(x - 0.3, y - 0.3, z - 0.3, x + 0.3, y + 0.3, z + 0.3))) {
-                    Render3DUtil.drawBox(matrixStack, ent.getBoundingBox(), color.getValue());
+                    Render3DUtil.drawBox(matrixStack, ent.getBoundingBox(), hand.getValue());
                     break;
                 }
             }
 
             BlockHitResult bhr = mc.world.raycast(new RaycastContext(lastPos, pos, RaycastContext.ShapeType.OUTLINE, RaycastContext.FluidHandling.NONE, mc.player));
             if (bhr != null && bhr.getType() == HitResult.Type.BLOCK) {
-                Render3DUtil.drawBox(matrixStack, new Box(bhr.getBlockPos()), color.getValue());
+                Render3DUtil.drawBox(matrixStack, new Box(bhr.getBlockPos()), hand.getValue());
                 break;
             }
 
             if (y <= -65) break;
             if (motionX == 0 && motionY == 0 && motionZ == 0) continue;
 
-            Render3DUtil.drawLine(lastPos, pos, color.getValue());
+            Render3DUtil.drawLine(lastPos, pos, hand.getValue());
         }
+    }
+
+    private boolean isThrowable(Item item) {
+        return item instanceof EnderPearlItem || item instanceof TridentItem || item instanceof ExperienceBottleItem || item instanceof SnowballItem || item instanceof EggItem || item instanceof SplashPotionItem || item instanceof LingeringPotionItem;
+    }
+
+    private float getDistance(Item item) {
+        return item instanceof BowItem ? 1.0f : 0.4f;
+    }
+
+    private float getThrowVelocity(Item item) {
+        if (item instanceof SplashPotionItem || item instanceof LingeringPotionItem) return 0.5f;
+        if (item instanceof ExperienceBottleItem) return 0.59f;
+        if (item instanceof TridentItem) return 2f;
+        return 1.5f;
+    }
+
+    private int getThrowPitch(Item item) {
+        if (item instanceof SplashPotionItem || item instanceof LingeringPotionItem || item instanceof ExperienceBottleItem)
+            return 20;
+        return 0;
     }
 }

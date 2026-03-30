@@ -11,6 +11,7 @@ public interface IFireworkRocketEntity {
 
     @Accessor("shooter")
     LivingEntity getShooter();
+
     @Invoker("wasShotByEntity")
     boolean hookWasShotByEntity();
 

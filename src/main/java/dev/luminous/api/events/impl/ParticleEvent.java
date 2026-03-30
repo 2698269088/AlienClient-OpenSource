@@ -2,27 +2,15 @@ package dev.luminous.api.events.impl;
 
 import dev.luminous.api.events.Event;
 import net.minecraft.client.particle.Particle;
-import net.minecraft.particle.ParticleEffect;
 
 public class ParticleEvent extends Event {
-    public ParticleEvent() {
-        super(Stage.Pre);
-    }
-    public static class AddParticle extends ParticleEvent {
+    private static final ParticleEvent instance = new ParticleEvent();
+    public Particle particle;
 
-        public final Particle particle;
-        public AddParticle(Particle particle){
-            this.particle = particle;
-        }
-
+    public static ParticleEvent get(Particle particle) {
+        instance.particle = particle;
+        instance.setCancelled(false);
+        return instance;
     }
 
-    public static class AddEmmiter extends ParticleEvent {
-        public final ParticleEffect emmiter;
-
-        public AddEmmiter(ParticleEffect emmiter){
-            this.emmiter = emmiter;
-        }
-
-    }
 }

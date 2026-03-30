@@ -1,15 +1,17 @@
 package dev.luminous.mod.modules.impl.combat;
 
 import dev.luminous.Alien;
+import dev.luminous.api.events.eventbus.EventListener;
+import dev.luminous.api.events.impl.UpdateEvent;
 import dev.luminous.api.utils.combat.CombatUtil;
-import dev.luminous.api.utils.entity.EntityUtil;
-import dev.luminous.api.utils.entity.InventoryUtil;
+import dev.luminous.api.utils.math.PredictUtil;
 import dev.luminous.api.utils.math.Timer;
+import dev.luminous.api.utils.player.EntityUtil;
+import dev.luminous.api.utils.player.InventoryUtil;
+import dev.luminous.api.utils.world.BlockPosX;
 import dev.luminous.api.utils.world.BlockUtil;
 import dev.luminous.mod.modules.Module;
-import dev.luminous.mod.modules.impl.client.AntiCheat;
 import dev.luminous.mod.modules.impl.exploit.Blink;
-import dev.luminous.mod.modules.settings.Placement;
 import dev.luminous.mod.modules.settings.impl.BooleanSetting;
 import dev.luminous.mod.modules.settings.impl.EnumSetting;
 import dev.luminous.mod.modules.settings.impl.SliderSetting;
@@ -17,55 +19,65 @@ import net.minecraft.block.Blocks;
 import net.minecraft.block.ConcretePowderBlock;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.MathHelper;
+import net.minecraft.item.ElytraItem;
+import net.minecraft.util.math.*;
 
 import java.util.ArrayList;
 
+import static dev.luminous.api.utils.world.BlockUtil.isStrictDirection;
+
 public class AutoTrap
         extends Module {
-    final Timer timer = new Timer();
+    public static AutoTrap INSTANCE;
     public final SliderSetting delay =
             add(new SliderSetting("Delay", 100, 0, 500).setSuffix("ms"));
+    private final EnumSetting<TargetMode> targetMod =
+            add(new EnumSetting<>("TargetMode", TargetMode.Single));
+    private final EnumSetting<Mode> headMode = add(new EnumSetting<>("BlockForHead", Mode.Anchor));
+    final ArrayList<BlockPos> trapList = new ArrayList<>();
+    final ArrayList<BlockPos> placeList = new ArrayList<>();
+    private final Timer timer = new Timer();
     private final SliderSetting placeRange =
             add(new SliderSetting("PlaceRange", 4.0f, 1.0f, 6.0f).setSuffix("m"));
     private final SliderSetting blocksPer = add(new SliderSetting("BlocksPer", 1, 1, 8));
+    public final SliderSetting predictTicks =
+            add(new SliderSetting("PredictTicks", 2, 0.0, 50, 1));
     private final BooleanSetting rotate =
             add(new BooleanSetting("Rotate", true));
     private final BooleanSetting autoDisable =
             add(new BooleanSetting("AutoDisable", true));
     private final SliderSetting range =
             add(new SliderSetting("Range", 5.0f, 1.0f, 8.0f).setSuffix("m"));
-    private final EnumSetting<TargetMode> targetMod =
-            add(new EnumSetting<>("TargetMode", TargetMode.Single));
     private final BooleanSetting checkMine =
             add(new BooleanSetting("DetectMining", false));
     private final BooleanSetting helper =
             add(new BooleanSetting("Helper", true));
     private final BooleanSetting inventory =
             add(new BooleanSetting("InventorySwap", true));
+    private final BooleanSetting onlyCrawling =
+            add(new BooleanSetting("OnlyCrawling", false));
+    private final BooleanSetting checkElytra =
+            add(new BooleanSetting("CheckElytra", false));
     private final BooleanSetting extend =
             add(new BooleanSetting("Extend", true));
     private final BooleanSetting antiStep =
             add(new BooleanSetting("AntiStep", false));
     private final BooleanSetting onlyBreak =
-            add(new BooleanSetting("OnlyBreak", false, () -> antiStep.getValue()));
+            add(new BooleanSetting("OnlyBreak", false, antiStep::getValue));
     private final BooleanSetting head =
             add(new BooleanSetting("Head", true));
     private final BooleanSetting headExtend =
             add(new BooleanSetting("HeadExtend", true));
-
-    private final EnumSetting<Mode> headMode = add(new EnumSetting<>("BlockForHead", Mode.Anchor));
     private final BooleanSetting chestUp =
             add(new BooleanSetting("ChestUp", true));
     private final BooleanSetting onlyBreaking =
-            add(new BooleanSetting("OnlyBreaking", false, () -> chestUp.getValue()));
+            add(new BooleanSetting("OnlyBreaking", false, chestUp::getValue));
     private final BooleanSetting chest =
             add(new BooleanSetting("Chest", true));
     private final BooleanSetting onlyGround =
-            add(new BooleanSetting("OnlyGround", false, () -> chest.getValue()));
+            add(new BooleanSetting("OnlyGround", false, chest::getValue));
+    private final BooleanSetting ignoreCrawling =
+            add(new BooleanSetting("IgnoreCrawling", false, chest::getValue));
     private final BooleanSetting legs =
             add(new BooleanSetting("Legs", false));
     private final BooleanSetting legAnchor =
@@ -79,7 +91,7 @@ public class AutoTrap
     private final BooleanSetting usingPause = add(new BooleanSetting("UsingPause", true));
     private final BooleanSetting selfGround = add(new BooleanSetting("SelfGround", true));
     public PlayerEntity target;
-    public static AutoTrap INSTANCE;
+    int progress = 0;
 
     public AutoTrap() {
         super("AutoTrap", Category.Combat);
@@ -87,29 +99,21 @@ public class AutoTrap
         INSTANCE = this;
     }
 
-    public enum TargetMode {
-        Single, Multi
-    }
-
-    int progress = 0;
-    private final ArrayList<BlockPos> trapList = new ArrayList<>();
-    private final ArrayList<BlockPos> placeList = new ArrayList<>();
-
-    @Override
-    public void onUpdate() {
+    @EventListener
+    public void onUpdate(UpdateEvent event) {
         trapList.clear();
         placeList.clear();
         progress = 0;
+        target = null;
         if (selfGround.getValue() && !mc.player.isOnGround()) {
-            target = null;
             return;
         }
+        if (inventory.getValue() && !EntityUtil.inInventory()) return;
         if (Blink.INSTANCE.isOn() && Blink.INSTANCE.pauseModule.getValue()) return;
         if (usingPause.getValue() && mc.player.isUsingItem()) {
-            target = null;
             return;
         }
-        if (!timer.passedMs((long) delay.getValue())) {
+        if (!timer.passed((long) delay.getValue())) {
             return;
         }
         if (targetMod.getValue() == TargetMode.Single) {
@@ -135,13 +139,20 @@ public class AutoTrap
 
     private void trapTarget(PlayerEntity target) {
         if (onlyHole.getValue() && !Alien.HOLE.isHole(EntityUtil.getEntityPos(target))) return;
-        doTrap(EntityUtil.getEntityPos(target, true));
+        if (onlyCrawling.getValue() && !target.isCrawling() && (!checkElytra.getValue() || !(target.getInventory().armor.get(2).getItem() instanceof ElytraItem) || mc.player.getY() < target.getY() + 1 && !target.isFallFlying()))
+            return;
+        Vec3d playerPos = predictTicks.getValue() > 0 ? PredictUtil.getPos(target, predictTicks.getValueInt()) : target.getPos();
+        doTrap(target, new BlockPosX(playerPos.getX(), playerPos.getY(), playerPos.getZ()));
     }
 
-    private void doTrap(BlockPos pos) {
+    private void doTrap(PlayerEntity player, BlockPos pos) {
         if (pos == null) return;
-        if (trapList.contains(pos)) return;
+        if (trapList.contains(pos)) {
+            return;
+        }
         trapList.add(pos);
+        int headOffset = player.isCrawling() ? 1 : 2;
+        int chestOffset = player.isCrawling() ? 0 : 1;
         if (legs.getValue()) {
             for (Direction i : Direction.values()) {
                 if (i == Direction.DOWN || i == Direction.UP) continue;
@@ -155,23 +166,25 @@ public class AutoTrap
             for (int x : new int[]{1, 0, -1}) {
                 for (int z : new int[]{1, 0, -1}) {
                     BlockPos offsetPos = pos.add(z, 0, x);
-                    if (checkEntity(new BlockPos(offsetPos))) tryPlaceBlock(offsetPos.up(2), headMode.getValue() == Mode.Anchor, headMode.getValue() == Mode.Concrete, headMode.getValue() == Mode.Web);
+                    if (checkEntity(new BlockPos(offsetPos)))
+                        tryPlaceBlock(offsetPos.up(headOffset), headMode.getValue() == Mode.Anchor, headMode.getValue() == Mode.Concrete, headMode.getValue() == Mode.Web);
                 }
             }
         }
         if (head.getValue()) {
-            if (BlockUtil.clientCanPlace(pos.up(2), breakCrystal.getValue())) {
-                if (BlockUtil.getPlaceSide(pos.up(2)) == null) {
+            if (BlockUtil.clientCanPlace(pos.up(headOffset), breakCrystal.getValue())) {
+                if (BlockUtil.getPlaceSide(pos.up(headOffset)) == null) {
                     boolean trapChest = helper.getValue();
-                    if (getHelper(pos.up(2)) != null) {
-                        tryPlaceObsidian(getHelper(pos.up(2)));
+                    if (getHelper(pos.up(headOffset)) != null) {
+                        tryPlaceObsidian(getHelper(pos.up(headOffset)));
                         trapChest = false;
                     }
                     if (trapChest) {
                         for (Direction i : Direction.values()) {
                             if (i == Direction.DOWN || i == Direction.UP) continue;
-                            BlockPos offsetPos = pos.offset(i).up();
-                            if (BlockUtil.clientCanPlace(offsetPos.up(), breakCrystal.getValue())) {
+                            BlockPos offsetPos = pos.offset(i).up(chestOffset);
+                            if (!isStrictDirection(pos.offset(i).up(), i.getOpposite())) continue;
+                            if (BlockUtil.clientCanPlace(offsetPos.up(chestOffset), breakCrystal.getValue())) {
                                 if (BlockUtil.canPlace(offsetPos, placeRange.getValue(), breakCrystal.getValue())) {
                                     tryPlaceObsidian(offsetPos);
                                     trapChest = false;
@@ -182,8 +195,9 @@ public class AutoTrap
                         if (trapChest) {
                             for (Direction i : Direction.values()) {
                                 if (i == Direction.DOWN || i == Direction.UP) continue;
-                                BlockPos offsetPos = pos.offset(i).up();
-                                if (BlockUtil.clientCanPlace(offsetPos.up(), breakCrystal.getValue())) {
+                                BlockPos offsetPos = pos.offset(i).up(chestOffset);
+                                if (!isStrictDirection(pos.offset(i).up(), i.getOpposite())) continue;
+                                if (BlockUtil.clientCanPlace(offsetPos.up(chestOffset), breakCrystal.getValue())) {
                                     if (BlockUtil.getPlaceSide(offsetPos) == null && BlockUtil.clientCanPlace(offsetPos, breakCrystal.getValue()) && getHelper(offsetPos) != null) {
                                         tryPlaceObsidian(getHelper(offsetPos));
                                         trapChest = false;
@@ -194,8 +208,9 @@ public class AutoTrap
                             if (trapChest) {
                                 for (Direction i : Direction.values()) {
                                     if (i == Direction.DOWN || i == Direction.UP) continue;
-                                    BlockPos offsetPos = pos.offset(i).up();
-                                    if (BlockUtil.clientCanPlace(offsetPos.up(), breakCrystal.getValue())) {
+                                    BlockPos offsetPos = pos.offset(i).up(chestOffset);
+                                    if (!isStrictDirection(pos.offset(i).up(), i.getOpposite())) continue;
+                                    if (BlockUtil.clientCanPlace(offsetPos.up(chestOffset), breakCrystal.getValue())) {
                                         if (BlockUtil.getPlaceSide(offsetPos) == null && BlockUtil.clientCanPlace(offsetPos, breakCrystal.getValue()) && getHelper(offsetPos) != null) {
                                             if (BlockUtil.getPlaceSide(offsetPos.down()) == null && BlockUtil.clientCanPlace(offsetPos.down(), breakCrystal.getValue()) && getHelper(offsetPos.down()) != null) {
                                                 tryPlaceObsidian(getHelper(offsetPos.down()));
@@ -208,10 +223,10 @@ public class AutoTrap
                         }
                     }
                 }
-                tryPlaceBlock(pos.up(2), headMode.getValue() == Mode.Anchor, headMode.getValue() == Mode.Concrete, headMode.getValue() == Mode.Web);
+                tryPlaceBlock(pos.up(headOffset), headMode.getValue() == Mode.Anchor, headMode.getValue() == Mode.Concrete, headMode.getValue() == Mode.Web);
             }
         }
-        if (antiStep.getValue() && (Alien.BREAK.isMining(pos.up(2)) || !onlyBreak.getValue())) {
+        if (antiStep.getValue() && (Alien.BREAK.isMining(pos.up(headOffset)) || !onlyBreak.getValue())) {
             if (BlockUtil.getPlaceSide(pos.up(3)) == null && BlockUtil.clientCanPlace(pos.up(3), breakCrystal.getValue())) {
                 if (getHelper(pos.up(3), Direction.DOWN) != null) {
                     tryPlaceObsidian(getHelper(pos.up(3)));
@@ -228,8 +243,8 @@ public class AutoTrap
         if (chestUp.getValue()) {
             for (Direction i : Direction.values()) {
                 if (i == Direction.DOWN || i == Direction.UP) continue;
-                BlockPos offsetPos = pos.offset(i).up(2);
-                if (!onlyBreaking.getValue() || Alien.BREAK.isMining(pos.up(2))) {
+                BlockPos offsetPos = pos.offset(i).up(headOffset);
+                if (!onlyBreaking.getValue() || Alien.BREAK.isMining(pos.up(headOffset))) {
                     tryPlaceObsidian(offsetPos);
                     if (BlockUtil.getPlaceSide(offsetPos) == null && BlockUtil.clientCanPlace(offsetPos, breakCrystal.getValue())) {
                         if (getHelper(offsetPos) != null) {
@@ -241,16 +256,15 @@ public class AutoTrap
                 }
             }
         }
-        if (chest.getValue() && (!onlyGround.getValue() || target.isOnGround())) {
+        if (chest.getValue() && (!onlyGround.getValue() || target.isOnGround()) && (!ignoreCrawling.getValue() || !target.isCrawling())) {
             for (Direction i : Direction.values()) {
                 if (i == Direction.DOWN || i == Direction.UP) continue;
-                BlockPos offsetPos = pos.offset(i).up();
+                BlockPos offsetPos = pos.offset(i).up(chestOffset);
                 tryPlaceObsidian(offsetPos);
                 if (BlockUtil.getPlaceSide(offsetPos) == null && BlockUtil.clientCanPlace(offsetPos, breakCrystal.getValue())) {
                     if (getHelper(offsetPos) != null) {
                         tryPlaceObsidian(getHelper(offsetPos));
-                    } else
-                    if (BlockUtil.getPlaceSide(offsetPos.down()) == null && BlockUtil.clientCanPlace(offsetPos.down(), breakCrystal.getValue()) && getHelper(offsetPos.down()) != null) {
+                    } else if (BlockUtil.getPlaceSide(offsetPos.down()) == null && BlockUtil.clientCanPlace(offsetPos.down(), breakCrystal.getValue()) && getHelper(offsetPos.down()) != null) {
                         tryPlaceObsidian(getHelper(offsetPos.down()));
                     }
                 }
@@ -260,7 +274,9 @@ public class AutoTrap
             for (int x : new int[]{1, 0, -1}) {
                 for (int z : new int[]{1, 0, -1}) {
                     BlockPos offsetPos = pos.add(x, 0, z);
-                    if (checkEntity(new BlockPos(offsetPos))) doTrap(offsetPos);
+                    if (checkEntity(new BlockPos(offsetPos))) {
+                        doTrap(player, offsetPos);
+                    }
                 }
             }
         }
@@ -278,7 +294,8 @@ public class AutoTrap
         if (!helper.getValue()) return null;
         for (Direction i : Direction.values()) {
             if (checkMine.getValue() && Alien.BREAK.isMining(pos.offset(i))) continue;
-            if (AntiCheat.INSTANCE.placement.getValue() == Placement.Strict && !BlockUtil.isStrictDirection(pos.offset(i), i.getOpposite())) continue;
+            if (!BlockUtil.isStrictDirection(pos.offset(i), i.getOpposite()))
+                continue;
             if (BlockUtil.canPlace(pos.offset(i), placeRange.getValue(), breakCrystal.getValue())) return pos.offset(i);
         }
         return null;
@@ -294,10 +311,11 @@ public class AutoTrap
         }
         return null;
     }
+
     private boolean checkEntity(BlockPos pos) {
         if (mc.player.getBoundingBox().intersects(new Box(pos))) return false;
-        for (Entity entity : BlockUtil.getEndCrystals(new Box(pos))) {
-            if (entity.isAlive())
+        for (Entity entity : Alien.THREAD.getPlayers()) {
+            if (entity.getBoundingBox().intersects(new Box(pos)) && entity.isAlive())
                 return true;
         }
         return false;
@@ -308,7 +326,7 @@ public class AutoTrap
         if (Alien.BREAK.isMining(pos)) return;
         if (!BlockUtil.canPlace(pos, 6, breakCrystal.getValue())) return;
         if (!(progress < blocksPer.getValue())) return;
-        if (MathHelper.sqrt((float) EntityUtil.getEyesPos().squaredDistanceTo(pos.toCenterPos())) > placeRange.getValue())
+        if (MathHelper.sqrt((float) mc.player.getEyePos().squaredDistanceTo(pos.toCenterPos())) > placeRange.getValue())
             return;
         int old = mc.player.getInventory().selectedSlot;
         int block = sand ? getConcrete() : (web ? (getWeb() != -1 ? getWeb() : getBlock()) : (anchor && getAnchor() != -1 ? getAnchor() : getBlock()));
@@ -326,13 +344,14 @@ public class AutoTrap
         timer.reset();
         progress++;
     }
+
     private void tryPlaceObsidian(BlockPos pos) {
         if (pos == null) return;
         if (placeList.contains(pos)) return;
         if (Alien.BREAK.isMining(pos)) return;
         if (!BlockUtil.canPlace(pos, 6, breakCrystal.getValue())) return;
         if (!(progress < blocksPer.getValue())) return;
-        if (MathHelper.sqrt((float) EntityUtil.getEyesPos().squaredDistanceTo(pos.toCenterPos())) > placeRange.getValue())
+        if (MathHelper.sqrt((float) mc.player.getEyePos().squaredDistanceTo(pos.toCenterPos())) > placeRange.getValue())
             return;
         int old = mc.player.getInventory().selectedSlot;
         int block = getBlock();
@@ -375,6 +394,7 @@ public class AutoTrap
             return InventoryUtil.findClass(ConcretePowderBlock.class);
         }
     }
+
     private int getWeb() {
         if (inventory.getValue()) {
             return InventoryUtil.findBlockInventorySlot(Blocks.COBWEB);
@@ -382,6 +402,7 @@ public class AutoTrap
             return InventoryUtil.findBlock(Blocks.COBWEB);
         }
     }
+
     private int getAnchor() {
         if (inventory.getValue()) {
             return InventoryUtil.findBlockInventorySlot(Blocks.RESPAWN_ANCHOR);
@@ -389,6 +410,11 @@ public class AutoTrap
             return InventoryUtil.findBlock(Blocks.RESPAWN_ANCHOR);
         }
     }
+
+    public enum TargetMode {
+        Single, Multi
+    }
+
     private enum Mode {
         Obsidian,
         Anchor,

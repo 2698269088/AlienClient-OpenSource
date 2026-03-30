@@ -1,23 +1,33 @@
 package dev.luminous.asm.mixins;
 
 import dev.luminous.Alien;
-import dev.luminous.api.events.impl.MouseUpdateEvent;
-import dev.luminous.mod.gui.clickgui.ClickGuiScreen;
+import dev.luminous.api.interfaces.IMouseHook;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.Mouse;
+import net.minecraft.client.option.KeyBinding;
+import net.minecraft.client.util.InputUtil;
+import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-import static dev.luminous.api.utils.Wrapper.mc;
 @Mixin(Mouse.class)
-public class MixinMouse {
+public class MixinMouse implements IMouseHook {
+    @Shadow
+    private boolean cursorLocked;
+    @Final
+    @Shadow
+    private MinecraftClient client;
+    @Shadow
+    private double x;
+    @Shadow
+    private double y;
+
     @Inject(method = "onMouseButton", at = @At("HEAD"))
     private void onMouse(long window, int button, int action, int mods, CallbackInfo ci) {
         int key = -(button + 2);
-        if (mc.currentScreen instanceof ClickGuiScreen && action == 1 && Alien.MODULE.setBind(key)) {
-            return;
-        }
         if (action == 1) {
             Alien.MODULE.onKeyPressed(key);
         }
@@ -26,8 +36,19 @@ public class MixinMouse {
         }
     }
 
-    @Inject(method = "updateMouse", at = @At("RETURN"))
-    private void updateHook(CallbackInfo ci) {
-        Alien.EVENT_BUS.post(new MouseUpdateEvent());
+    @Override
+    public void alienClient$lock() {
+        if (this.client.isWindowFocused()) {
+            if (!this.cursorLocked) {
+                if (!MinecraftClient.IS_SYSTEM_MAC) {
+                    KeyBinding.updatePressedStates();
+                }
+
+                this.cursorLocked = true;
+                this.x = this.client.getWindow().getWidth() / 2d;
+                this.y = this.client.getWindow().getHeight() / 2d;
+                InputUtil.setCursorParameters(this.client.getWindow().getHandle(), InputUtil.GLFW_CURSOR_DISABLED, this.x, this.y);
+            }
+        }
     }
 }

@@ -2,6 +2,9 @@ package dev.luminous.asm.mixins;
 
 import dev.luminous.Alien;
 import dev.luminous.api.events.impl.EntitySpawnEvent;
+import dev.luminous.api.events.impl.EntitySpawnedEvent;
+import dev.luminous.api.events.impl.RemoveEntityEvent;
+import dev.luminous.api.events.impl.TickEntityEvent;
 import dev.luminous.mod.modules.impl.render.Ambience;
 import dev.luminous.mod.modules.impl.render.NoRender;
 import net.minecraft.client.render.DimensionEffects;
@@ -27,17 +30,45 @@ import java.util.function.Supplier;
 
 @Mixin(ClientWorld.class)
 public abstract class MixinClientWorld extends World {
+    @Unique
+    private final DimensionEffects overworld = new DimensionEffects.Overworld();
+
     protected MixinClientWorld(MutableWorldProperties properties, RegistryKey<World> registryRef, DynamicRegistryManager registryManager, RegistryEntry<DimensionType> dimensionEntry, Supplier<Profiler> profiler, boolean isClient, boolean debugWorld, long biomeAccess, int maxChainedNeighborUpdates) {
         super(properties, registryRef, registryManager, dimensionEntry, profiler, isClient, debugWorld, biomeAccess, maxChainedNeighborUpdates);
     }
 
-    @Inject(method = "addEntity", at = @At("HEAD"), cancellable = true)
-    public void onAddEntity(Entity entity, CallbackInfo ci) {
-        EntitySpawnEvent event = new EntitySpawnEvent(entity);
+    @Inject(method = "tickEntity", at = @At("HEAD"), cancellable = true)
+    public void onTickEntity(Entity entity, CallbackInfo ci) {
+        TickEntityEvent event = TickEntityEvent.get(entity);
         Alien.EVENT_BUS.post(event);
         if (event.isCancelled()) {
             ci.cancel();
         }
+    }
+
+    @Inject(method = "addEntity", at = @At("HEAD"), cancellable = true)
+    public void onAddEntity(Entity entity, CallbackInfo ci) {
+        EntitySpawnEvent event = EntitySpawnEvent.get(entity);
+        Alien.EVENT_BUS.post(event);
+        if (event.isCancelled()) {
+            ci.cancel();
+        }
+    }
+
+    @Inject(method = "removeEntity", at = @At(value = "HEAD"))
+    private void hookRemoveEntity(int entityId, Entity.RemovalReason removalReason, CallbackInfo ci) {
+        Entity entity = getEntityById(entityId);
+        if (entity == null) {
+            return;
+        }
+        RemoveEntityEvent removeEntityEvent = RemoveEntityEvent.get(entity, removalReason);
+        Alien.EVENT_BUS.post(removeEntityEvent);
+    }
+
+    @Inject(method = "addEntity", at = @At("TAIL"))
+    public void onAddEntityTail(Entity entity, CallbackInfo ci) {
+        EntitySpawnedEvent event = EntitySpawnedEvent.get(entity);
+        Alien.EVENT_BUS.post(event);
     }
 
     @Inject(method = "getSkyColor", at = @At("HEAD"), cancellable = true)
@@ -47,6 +78,7 @@ public abstract class MixinClientWorld extends World {
             info.setReturnValue(new Vec3d(sky.getRed() / 255.0, sky.getGreen() / 255.0, sky.getBlue() / 255.0));
         }
     }
+
     @Inject(method = "getCloudsColor", at = @At(value = "HEAD"), cancellable = true)
     private void hookGetCloudsColor(float tickDelta,
                                     CallbackInfoReturnable<Vec3d> cir) {
@@ -55,8 +87,6 @@ public abstract class MixinClientWorld extends World {
             cir.setReturnValue(new Vec3d(sky.getRed() / 255.0, sky.getGreen() / 255.0, sky.getBlue() / 255.0));
         }
     }
-    @Unique
-    private final DimensionEffects overworld = new DimensionEffects.Overworld();
 
     @Inject(method = "getDimensionEffects", at = @At("HEAD"), cancellable = true)
     private void onGetSkyProperties(CallbackInfoReturnable<DimensionEffects> info) {
@@ -65,6 +95,7 @@ public abstract class MixinClientWorld extends World {
         }
 
     }
+
     @Override
     public float getRainGradient(float delta) {
         return NoRender.INSTANCE.isOn() && NoRender.INSTANCE.weather.getValue() ? 0 : super.getRainGradient(delta);

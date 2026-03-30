@@ -1,24 +1,51 @@
 package dev.luminous.mod.modules.impl.movement;
 
-import dev.luminous.api.events.eventbus.EventHandler;
+import dev.luminous.api.events.eventbus.EventListener;
 import dev.luminous.api.events.eventbus.EventPriority;
+import dev.luminous.api.events.impl.KeyboardInputEvent;
 import dev.luminous.api.events.impl.MoveEvent;
+import dev.luminous.api.utils.player.EntityUtil;
+import dev.luminous.api.utils.world.BlockUtil;
 import dev.luminous.mod.modules.Module;
+import dev.luminous.mod.modules.settings.impl.BooleanSetting;
+import net.minecraft.util.math.Box;
 
 public class SafeWalk extends Module {
     public static SafeWalk INSTANCE;
+    private final BooleanSetting legit = add(new BooleanSetting("Legit", true));
+    private final BooleanSetting onlyInsideBlock = add(new BooleanSetting("OnlyInsideBlock", false));
+
     public SafeWalk() {
         super("SafeWalk", Category.Movement);
         setChinese("边缘行走");
         INSTANCE = this;
     }
 
-    @EventHandler(priority = EventPriority.LOW)
+    @EventListener(priority = EventPriority.LOWEST)
+    public void keyboard(KeyboardInputEvent event) {
+        if (mc.player.isOnGround() && legit.getValue() && shouldSafeWalk()) {
+            if (this.isOffsetBBEmpty(0.3, -1.0, 0.0)) {
+                mc.player.input.sneaking = true;
+            } else if (this.isOffsetBBEmpty(0.0, -1.0, 0.3)) {
+                mc.player.input.sneaking = true;
+            } else if (this.isOffsetBBEmpty(0.3, -1.0, 0.3)) {
+                mc.player.input.sneaking = true;
+            } else if (this.isOffsetBBEmpty(-0.3, -1.0, 0.0)) {
+                mc.player.input.sneaking = true;
+            } else if (this.isOffsetBBEmpty(0.0, -1.0, -0.3)) {
+                mc.player.input.sneaking = true;
+            } else if (this.isOffsetBBEmpty(-0.3, -1.0, -0.3)) {
+                mc.player.input.sneaking = true;
+            }
+        }
+    }
+
+    @EventListener(priority = EventPriority.LOW)
     public void onMove(MoveEvent event) {
-        double x = event.getX();
-        double y = event.getY();
-        double z = event.getZ();
-        if (mc.player.isOnGround()) {
+        if (mc.player.isOnGround() && !legit.getValue() && shouldSafeWalk()) {
+            double x = event.getX();
+            double y = event.getY();
+            double z = event.getZ();
             double increment = 0.05;
             while (x != 0.0 && this.isOffsetBBEmpty(x, -1.0, 0.0)) {
                 if (x < increment && x >= -increment) {
@@ -54,13 +81,19 @@ public class SafeWalk extends Module {
                 }
                 z += increment;
             }
+            event.setX(x);
+            event.setY(y);
+            event.setZ(z);
         }
-        event.setX(x);
-        event.setY(y);
-        event.setZ(z);
+    }
+
+    public boolean shouldSafeWalk() {
+        return !onlyInsideBlock.getValue() || EntityUtil.isInsideBlock();
     }
 
     public boolean isOffsetBBEmpty(double offsetX, double offsetY, double offsetZ) {
-        return !mc.world.canCollide(mc.player, mc.player.getBoundingBox().offset(offsetX, offsetY, offsetZ));
+        Box playerBox = mc.player.getBoundingBox();
+        Box box = new Box(playerBox.minX, playerBox.minY, playerBox.maxZ, playerBox.maxX, playerBox.minY + 0.5, playerBox.maxZ);
+        return !BlockUtil.canCollide(mc.player, box.offset(offsetX, offsetY, offsetZ));
     }
 }

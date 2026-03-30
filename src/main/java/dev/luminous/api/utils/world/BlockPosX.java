@@ -11,7 +11,7 @@ public class BlockPosX extends BlockPos {
     }
 
     public BlockPosX(double x, double y, double z, boolean fix) {
-        this(x, y + (fix ? 0.5 : 0), z);
+        this(x, y + (fix ? 0.3 : 0), z);
     }
 
     public BlockPosX(Vec3d vec3d) {

@@ -1,7 +1,7 @@
 package dev.luminous.mod.modules.impl.misc;
 
 import dev.luminous.Alien;
-import dev.luminous.api.events.eventbus.EventHandler;
+import dev.luminous.api.events.eventbus.EventListener;
 import dev.luminous.api.events.impl.DeathEvent;
 import dev.luminous.mod.modules.Module;
 import dev.luminous.mod.modules.settings.impl.EnumSetting;
@@ -13,22 +13,8 @@ import java.util.List;
 import java.util.Random;
 
 public class AutoEZ extends Module {
-    public enum Type {
-        Bot,
-        Custom,
-        AutoSex
-    }
-    private final EnumSetting<Type> type = add(new EnumSetting<>("Type", Type.Bot));
-    private final SliderSetting range =
-            add(new SliderSetting("Range", 10, 0, 20,.1));
-    private final StringSetting message = add(new StringSetting("Message", "EZ %player%", () -> type.getValue() == Type.Custom));
-    private final SliderSetting randoms =
-            add(new SliderSetting("Random", 3, 0, 20,1));
-    public AutoEZ() {
-        super("AutoEZ", Category.Misc);
-        setChinese("自动嘲讽");
-    }
-    public List<String> sex = List.of("呐呐~杂鱼哥哥不会这样就被捉弄的不会说话了吧♡",
+    private static final String CHARACTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    public final List<String> sex = List.of("呐呐~杂鱼哥哥不会这样就被捉弄的不会说话了吧♡",
             "嘻嘻~杂鱼哥哥不会以为竖个大拇哥就能欺负我了吧~不会吧♡不会吧♡",
             "杂鱼哥哥怎么可能欺负得了别人呢~只能欺负自己哦♡~",
             "哥哥真是好欺负啊♡嘻嘻~",
@@ -37,8 +23,7 @@ public class AutoEZ extends Module {
             "什么嘛~废柴哥哥会想这种事情啊~唔呃",
             "把你肮脏的目光拿开啦~很恶心哦♡",
             "咱的期待就是被你这样的笨蛋破坏了~♡");
-
-    public List<String> bot = List.of("鼠标明天到，触摸板打的",
+    public final List<String> bot = List.of("鼠标明天到，触摸板打的",
             "转人工",
             "收徒",
             "不收徒",
@@ -76,10 +61,20 @@ public class AutoEZ extends Module {
             "下次记得晚点玩",
             "随便玩玩,不带妹",
             "扣1上车");
+    private final EnumSetting<Type> type = add(new EnumSetting<>("Type", Type.Bot));
+    final StringSetting message = add(new StringSetting("Message", "EZ %player%", () -> type.getValue() == Type.Custom));
+    final Random random = new Random();
+    private final SliderSetting range =
+            add(new SliderSetting("Range", 10, 0, 20, .1));
+    private final SliderSetting randoms =
+            add(new SliderSetting("Random", 3, 0, 20, 1));
 
-    Random random = new Random();
-    private static final String CHARACTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-    @EventHandler
+    public AutoEZ() {
+        super("AutoEZ", Category.Misc);
+        setChinese("自动嘲讽");
+    }
+
+    @EventListener
     public void onDeath(DeathEvent event) {
         PlayerEntity player = event.getPlayer();
         if (player != mc.player && !Alien.FRIEND.isFriend(player)) {
@@ -90,10 +85,13 @@ public class AutoEZ extends Module {
             if (!randomString.isEmpty()) {
                 randomString = " " + randomString;
             }
-            switch (type.getValue())  {
-                case Bot -> mc.getNetworkHandler().sendChatMessage(bot.get(random.nextInt(bot.size() - 1)) + " " + player.getName().getString() + randomString);
-                case Custom -> mc.getNetworkHandler().sendChatMessage(message.getValue().replaceAll("%player%", player.getName().getString()) + randomString);
-                case AutoSex -> mc.getNetworkHandler().sendChatMessage(sex.get(random.nextInt(sex.size() - 1)) + " " + player.getName().getString() + randomString);
+            switch (type.getValue()) {
+                case Bot ->
+                        mc.getNetworkHandler().sendChatMessage(bot.get(random.nextInt(bot.size() - 1)) + " " + player.getName().getString() + randomString);
+                case Custom ->
+                        mc.getNetworkHandler().sendChatMessage(message.getValue().replaceAll("%player%", player.getName().getString()) + randomString);
+                case AutoSex ->
+                        mc.getNetworkHandler().sendChatMessage(sex.get(random.nextInt(sex.size() - 1)) + " " + player.getName().getString() + randomString);
             }
         }
     }
@@ -107,5 +105,11 @@ public class AutoEZ extends Module {
         }
 
         return sb.toString();
+    }
+
+    public enum Type {
+        Bot,
+        Custom,
+        AutoSex
     }
 }

@@ -1,14 +1,14 @@
 package dev.luminous.mod.modules.impl.movement;
 
 import com.mojang.blaze3d.systems.RenderSystem;
-import dev.luminous.api.events.eventbus.EventHandler;
+import dev.luminous.Alien;
+import dev.luminous.api.events.eventbus.EventListener;
 import dev.luminous.api.events.eventbus.EventPriority;
 import dev.luminous.api.events.impl.*;
-import dev.luminous.api.utils.entity.MovementUtil;
+import dev.luminous.api.utils.player.MovementUtil;
 import dev.luminous.api.utils.render.ColorUtil;
-import dev.luminous.Alien;
-import dev.luminous.core.impl.CommandManager;
 import dev.luminous.mod.modules.Module;
+import dev.luminous.mod.modules.impl.client.AntiCheat;
 import dev.luminous.mod.modules.impl.player.Freecam;
 import dev.luminous.mod.modules.settings.impl.BooleanSetting;
 import dev.luminous.mod.modules.settings.impl.ColorSetting;
@@ -28,18 +28,20 @@ import java.awt.*;
 public class HoleSnap extends Module {
     public static HoleSnap INSTANCE;
     public final BooleanSetting any = add(new BooleanSetting("AnyHole", true));
-    private final SliderSetting range = this.add(new SliderSetting("Range", 5, 1, 50));
-    private final SliderSetting timeoutTicks = this.add(new SliderSetting("TimeOut", 40, 0, 100));
     public final SliderSetting timer = add(new SliderSetting("Timer", 1, 0.1, 8, 0.1));
     public final BooleanSetting up = add(new BooleanSetting("Up", true));
     public final BooleanSetting grim = add(new BooleanSetting("Grim", false));
-    private final SliderSetting steps = add(new SliderSetting("Steps", 0.8, 0, 1, 0.01, grim::getValue));
-   private final SliderSetting priority = add(new SliderSetting("Priority", 10,0 ,100, grim::getValue));
     public final ColorSetting color = add(new ColorSetting("Color", new Color(255, 255, 255, 100)));
     public final SliderSetting circleSize = add(new SliderSetting("CircleSize", 1f, 0.1f, 2.5f));
     public final BooleanSetting fade = add(new BooleanSetting("Fade", true));
     public final SliderSetting segments = add(new SliderSetting("Segments", 180, 0, 360));
+    private final SliderSetting range = this.add(new SliderSetting("Range", 5, 1, 50));
+    private final SliderSetting timeoutTicks = this.add(new SliderSetting("TimeOut", 40, 0, 100));
+    private final SliderSetting steps = add(new SliderSetting("Steps", 0.8, 0, 1, 0.01, grim::getValue));
+    private final SliderSetting priority = add(new SliderSetting("Priority", 10, 0, 100, grim::getValue));
     boolean resetMove = false;
+    boolean applyTimer = false;
+    Vec3d targetPos;
     private BlockPos holePos;
     private int stuckTicks;
     private int enabledTicks;
@@ -50,8 +52,57 @@ public class HoleSnap extends Module {
         INSTANCE = this;
     }
 
-    boolean applyTimer = false;
-    @EventHandler(priority = EventPriority.LOW + 1)
+    public static Vec2f getRotationTo(Vec3d posFrom, Vec3d posTo) {
+        Vec3d vec3d = posTo.subtract(posFrom);
+        return getRotationFromVec(vec3d);
+    }
+
+    public static void drawCircle(MatrixStack matrixStack, Color color, double circleSize, Vec3d pos, int segments) {
+        Vec3d camPos = mc.getBlockEntityRenderDispatcher().camera.getPos();
+        RenderSystem.disableDepthTest();
+        Matrix4f matrix = matrixStack.peek().getPositionMatrix();
+
+        RenderSystem.setShader(GameRenderer::getPositionColorProgram);
+        float a = color.getAlpha() / 255f;
+        float r = color.getRed() / 255f;
+        float g = color.getGreen() / 255f;
+        float b = color.getBlue() / 255f;
+        BufferBuilder bufferBuilder = Tessellator.getInstance().begin(VertexFormat.DrawMode.TRIANGLE_FAN, VertexFormats.POSITION_COLOR);
+
+        for (double i = 0; i < 360; i += ((double) 360 / segments)) {
+            double x = Math.sin(Math.toRadians(i)) * circleSize;
+            double z = Math.cos(Math.toRadians(i)) * circleSize;
+            Vec3d tempPos = new Vec3d(pos.x + x, pos.y, pos.z + z).add(-camPos.x, -camPos.y, -camPos.z);
+            bufferBuilder.vertex(matrix, (float) tempPos.x, (float) tempPos.y, (float) tempPos.z).color(r, g, b, a);
+        }
+
+        BufferRenderer.drawWithGlobalProgram(bufferBuilder.end());
+        RenderSystem.enableDepthTest();
+    }
+
+    private static Vec2f getRotationFromVec(Vec3d vec) {
+        double d = vec.x;
+        double d2 = vec.z;
+        double xz = Math.hypot(d, d2);
+        d2 = vec.z;
+        double d3 = vec.x;
+        double yaw = normalizeAngle(Math.toDegrees(Math.atan2(d2, d3)) - 90.0);
+        double pitch = normalizeAngle(Math.toDegrees(-Math.atan2(vec.y, xz)));
+        return new Vec2f((float) yaw, (float) pitch);
+    }
+
+    private static double normalizeAngle(double angleIn) {
+        double angle = angleIn;
+        if ((angle %= 360.0) >= 180.0) {
+            angle -= 360.0;
+        }
+        if (angle < -180.0) {
+            angle += 360.0;
+        }
+        return angle;
+    }
+
+    @EventListener(priority = EventPriority.LOW + 1)
     public void onTimer(TimerEvent event) {
         if (applyTimer) event.set(timer.getValueFloat());
     }
@@ -81,20 +132,19 @@ public class HoleSnap extends Module {
         }
     }
 
-    @EventHandler
+    @EventListener
     public void onReceivePacket(PacketEvent.Receive event) {
         if (event.getPacket() instanceof PlayerPositionLookS2CPacket) {
             this.disable();
         }
     }
-    Vec3d targetPos;
 
-    @EventHandler(priority = -999)
+    @EventListener(priority = -999)
     public void onKeyInput(KeyboardInputEvent e) {
         if (!grim.getValue()) {
             return;
-        } else if (MoveFix.INSTANCE.isOff() || !MoveFix.INSTANCE.grim.getValue()) {
-            CommandManager.sendChatMessage("§4HoleSnap require MovementFix.");
+        } else if (!AntiCheat.INSTANCE.movementSync()) {
+            sendMessage("§4HoleSnap require MovementSync.");
             disable();
             return;
         }
@@ -105,8 +155,8 @@ public class HoleSnap extends Module {
         mc.player.input.movementForward = 1;
     }
 
-    @Override
-    public void onUpdate() {
+    @EventListener
+    public void onUpdate(UpdateEvent event) {
         holePos = Alien.HOLE.getHole((float) range.getValue(), true, any.getValue(), up.getValue());
         if (holePos == null) {
             disable();
@@ -160,8 +210,8 @@ public class HoleSnap extends Module {
         }
     }
 
-    @EventHandler()
-    public void onRotate(LookAtEvent event) {
+    @EventListener()
+    public void onRotate(RotationEvent event) {
         if (grim.getValue() && holePos != null) {
             targetPos = new Vec3d(holePos.getX() + 0.5, mc.player.getY(), holePos.getZ() + 0.5);
             if (Alien.HOLE.isDoubleHole(holePos)) {
@@ -175,7 +225,7 @@ public class HoleSnap extends Module {
         }
     }
 
-    @EventHandler
+    @EventListener
     public void onMove(MoveEvent event) {
         if (grim.getValue()) return;
         if (!mc.player.isAlive() || mc.player.isFallFlying()) {
@@ -237,54 +287,6 @@ public class HoleSnap extends Module {
         } else {
             drawCircle(matrixStack, color, circleSize.getValue(), pos, segments.getValueInt());
         }
-        RenderSystem.setShaderColor(1, 1, 1, 1);
         GL11.glDisable(GL11.GL_BLEND);
-    }
-    public static Vec2f getRotationTo(Vec3d posFrom, Vec3d posTo) {
-        Vec3d vec3d = posTo.subtract(posFrom);
-        return getRotationFromVec(vec3d);
-    }
-
-    public static void drawCircle(MatrixStack matrixStack, Color color, double circleSize, Vec3d pos, int segments) {
-        Vec3d camPos = mc.getBlockEntityRenderDispatcher().camera.getPos();
-        RenderSystem.disableDepthTest();
-        Matrix4f matrix = matrixStack.peek().getPositionMatrix();
-        Tessellator tessellator = RenderSystem.renderThreadTesselator();
-        BufferBuilder bufferBuilder = tessellator.getBuffer();
-        RenderSystem.setShader(GameRenderer::getPositionProgram);
-        RenderSystem.setShaderColor(color.getRed() / 255f, color.getGreen() / 255f, color.getBlue() / 255f, color.getAlpha() / 255f);
-        bufferBuilder.begin(VertexFormat.DrawMode.TRIANGLE_FAN, VertexFormats.POSITION);
-
-        for (double i = 0; i < 360; i += ((double) 360 / segments)) {
-            double x = Math.sin(Math.toRadians(i)) * circleSize;
-            double z = Math.cos(Math.toRadians(i)) * circleSize;
-            Vec3d tempPos = new Vec3d(pos.x + x, pos.y, pos.z + z).add(-camPos.x, -camPos.y, -camPos.z);
-            bufferBuilder.vertex(matrix, (float) tempPos.x, (float) tempPos.y, (float) tempPos.z).next();
-        }
-
-        tessellator.draw();
-        RenderSystem.enableDepthTest();
-    }
-
-    private static Vec2f getRotationFromVec(Vec3d vec) {
-        double d = vec.x;
-        double d2 = vec.z;
-        double xz = Math.hypot(d, d2);
-        d2 = vec.z;
-        double d3 = vec.x;
-        double yaw = normalizeAngle(Math.toDegrees(Math.atan2(d2, d3)) - 90.0);
-        double pitch = normalizeAngle(Math.toDegrees(-Math.atan2(vec.y, xz)));
-        return new Vec2f((float) yaw, (float) pitch);
-    }
-
-    private static double normalizeAngle(double angleIn) {
-        double angle = angleIn;
-        if ((angle %= 360.0) >= 180.0) {
-            angle -= 360.0;
-        }
-        if (angle < -180.0) {
-            angle += 360.0;
-        }
-        return angle;
     }
 }

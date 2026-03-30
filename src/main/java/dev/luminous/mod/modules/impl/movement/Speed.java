@@ -1,14 +1,18 @@
 package dev.luminous.mod.modules.impl.movement;
 
-import dev.luminous.api.events.eventbus.EventHandler;
+import dev.luminous.Alien;
+import dev.luminous.api.events.eventbus.EventListener;
 import dev.luminous.api.events.eventbus.EventPriority;
 import dev.luminous.api.events.impl.MoveEvent;
+import dev.luminous.api.events.impl.MovedEvent;
 import dev.luminous.api.events.impl.PacketEvent;
-import dev.luminous.api.utils.entity.MovementUtil;
+import dev.luminous.api.events.impl.UpdateEvent;
 import dev.luminous.api.utils.math.Timer;
-import dev.luminous.Alien;
+import dev.luminous.api.utils.path.BaritoneUtil;
+import dev.luminous.api.utils.player.EntityUtil;
+import dev.luminous.api.utils.player.MovementUtil;
+import dev.luminous.api.utils.world.BlockUtil;
 import dev.luminous.mod.modules.Module;
-import dev.luminous.mod.modules.impl.client.BaritoneModule;
 import dev.luminous.mod.modules.settings.impl.BooleanSetting;
 import dev.luminous.mod.modules.settings.impl.EnumSetting;
 import dev.luminous.mod.modules.settings.impl.SliderSetting;
@@ -16,46 +20,52 @@ import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.decoration.ArmorStandEntity;
 import net.minecraft.entity.effect.StatusEffects;
+import net.minecraft.entity.vehicle.BoatEntity;
 import net.minecraft.network.packet.s2c.play.EntityVelocityUpdateS2CPacket;
 import net.minecraft.network.packet.s2c.play.ExplosionS2CPacket;
 import net.minecraft.network.packet.s2c.play.PlayerPositionLookS2CPacket;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec2f;
+import net.minecraft.util.math.Vec3d;
 
 public class Speed extends Module {
 
-    public enum Mode {
-        Custom,
-        GrimCollide,
-        StrafeStrict,
-    }
-    private final EnumSetting<Mode> mode = add(new EnumSetting<>("Mode", Mode.Custom));
-    public final SliderSetting collideSpeed = add(new SliderSetting("CollideSpeed", 0.08, 0.01, 0.08, 0.01, () -> mode.is(Mode.GrimCollide)));
+    public static Speed INSTANCE;
+    private final EnumSetting<Mode> mode = add(new EnumSetting<>("Mode", Mode.Strafe));
+    public final SliderSetting collideSpeed = add(new SliderSetting("CollideSpeed", 0.08, 0, 0.08, 0.01, () -> mode.is(Mode.Grim)));
+    private final BooleanSetting strict =
+            add(new BooleanSetting("Strict", true, () -> mode.is(Mode.Grim)));
+    private final BooleanSetting boat =
+            add(new BooleanSetting("BoatLongJump", true, () -> mode.is(Mode.Grim)));
+    public final SliderSetting boatExpand = add(new SliderSetting("BoatExpand", 0.2, 0, 1, 0.01, () -> mode.is(Mode.Grim)));
+    public final SliderSetting boatSpeed = add(new SliderSetting("BoatSpeed", 0.2, -2, 2, 0.01, () -> mode.is(Mode.Grim)));
+    public final SliderSetting boatJump = add(new SliderSetting("BoatJump", 0.2, 0, 2, 0.01, () -> mode.is(Mode.Grim)));
+
     private final BooleanSetting inWater =
-            add(new BooleanSetting("InWater", false, () -> !mode.is(Mode.GrimCollide)));
+            add(new BooleanSetting("InWater", false, () -> !mode.is(Mode.Grim)));
     private final BooleanSetting inBlock =
-            add(new BooleanSetting("InBlock", false, () -> !mode.is(Mode.GrimCollide)));
+            add(new BooleanSetting("InBlock", false, () -> !mode.is(Mode.Grim)));
     private final BooleanSetting airStop =
-            add(new BooleanSetting("AirStop", false, () -> !mode.is(Mode.GrimCollide)));
+            add(new BooleanSetting("AirStop", false, () -> !mode.is(Mode.Grim)));
     private final SliderSetting lagTime =
-            add(new SliderSetting("LagTime", 500, 0, 1000, 1, () -> !mode.is(Mode.GrimCollide)));
+            add(new SliderSetting("LagTime", 500, 0, 1000, 1, () -> !mode.is(Mode.Grim)));
 
     private final BooleanSetting jump =
-            add(new BooleanSetting("Jump", true, () -> mode.is(Mode.Custom)));
+            add(new BooleanSetting("Jump", true, () -> mode.is(Mode.Strafe)));
     private final SliderSetting strafeSpeed =
-            add(new SliderSetting("Speed", 0.2873, 0, 1.0, 0.0001, () -> mode.is(Mode.Custom)));
+            add(new SliderSetting("Speed", 0.2873, 0, 1.0, 0.0001, () -> mode.is(Mode.Strafe)));
     private final BooleanSetting explosions =
-            add(new BooleanSetting("ExplosionsBoost", false, () -> mode.is(Mode.Custom)));
+            add(new BooleanSetting("ExplosionsBoost", false, () -> mode.is(Mode.Strafe)));
     private final BooleanSetting velocity =
-            add(new BooleanSetting("VelocityBoost", true, () -> mode.is(Mode.Custom)));
+            add(new BooleanSetting("VelocityBoost", true, () -> mode.is(Mode.Strafe)));
     private final SliderSetting multiplier =
-            add(new SliderSetting("H-Factor", 1.0f, 0.0f, 5.0f, 0.01, () -> mode.is(Mode.Custom)));
+            add(new SliderSetting("H-Factor", 1.0f, 0.0f, 5.0f, 0.01, () -> mode.is(Mode.Strafe)));
     private final SliderSetting vertical =
-            add(new SliderSetting("V-Factor", 1.0f, 0.0f, 5.0f, 0.01, () -> mode.is(Mode.Custom)));
+            add(new SliderSetting("V-Factor", 1.0f, 0.0f, 5.0f, 0.01, () -> mode.is(Mode.Strafe)));
     private final SliderSetting coolDown =
-            add(new SliderSetting("CoolDown", 1000, 0, 5000, 1, () -> mode.is(Mode.Custom)));
+            add(new SliderSetting("CoolDown", 1000, 0, 5000, 1, () -> mode.is(Mode.Strafe)));
     private final BooleanSetting slow =
-            add(new BooleanSetting("Slowness", false, () -> mode.is(Mode.Custom)));
+            add(new BooleanSetting("Slowness", false, () -> mode.is(Mode.Strafe)));
     private final Timer expTimer = new Timer();
     private final Timer lagTimer = new Timer();
     private boolean stop;
@@ -67,7 +77,7 @@ public class Speed extends Module {
     private int stage;
     private double lastExp;
     private boolean boost;
-    public static Speed INSTANCE;
+
     public Speed() {
         super("Speed", Category.Movement);
         setChinese("加速");
@@ -89,59 +99,45 @@ public class Speed extends Module {
         stage = 4;
     }
 
-    @EventHandler(priority = EventPriority.HIGH)
+    @EventListener(priority = EventPriority.HIGH)
     public void invoke(PacketEvent.Receive event) {
-        if (BaritoneModule.isActive()) return;
-        if (mode.is(Mode.Custom)) {
+        if (BaritoneUtil.isActive()) return;
+        if (mode.is(Mode.Strafe)) {
             if (event.getPacket() instanceof EntityVelocityUpdateS2CPacket packet) {
                 if (mc.player != null
-                        && packet.getId() == mc.player.getId()
+                        && packet.getEntityId() == mc.player.getId()
                         && this.velocity.getValue()) {
                     double speed = Math.sqrt(
                             packet.getVelocityX() * packet.getVelocityX()
-                                    + packet.getVelocityZ() * packet.getVelocityZ())
-                            / 8000.0;
+                                    + packet.getVelocityZ() * packet.getVelocityZ());
 
                     this.lastExp = this.expTimer
-                            .passedMs(this.coolDown.getValueInt())
+                            .passed(this.coolDown.getValueInt())
                             ? speed
                             : (speed - this.lastExp);
 
                     if (this.lastExp > 0) {
                         this.expTimer.reset();
-                        mc.executeTask(() ->
-                        {
-                            this.speed +=
-                                    this.lastExp * this.multiplier.getValue();
 
-                            this.distance +=
-                                    this.lastExp * this.multiplier.getValue();
+                        this.speed +=
+                                this.lastExp * this.multiplier.getValue();
 
-                            if (MovementUtil.getMotionY() > 0
-                                    && this.vertical.getValue() != 0) {
-                                MovementUtil.setMotionY(MovementUtil.getMotionY() * this.vertical.getValue());
-                            }
-                        });
+                        this.distance +=
+                                this.lastExp * this.multiplier.getValue();
+
+                        if (MovementUtil.getMotionY() > 0
+                                && this.vertical.getValue() != 0) {
+                            MovementUtil.setMotionY(MovementUtil.getMotionY() * this.vertical.getValue());
+                        }
                     }
                 }
-            } else if (event.getPacket() instanceof PlayerPositionLookS2CPacket) {
-                lagTimer.reset();
-                if (mc.player != null) {
-                    this.distance = 0.0;
-                }
-
-                this.speed = 0.0;
-                this.stage = 4;
             } else if (event.getPacket() instanceof ExplosionS2CPacket packet) {
-
-                if (this.explosions.getValue()
-                        && MovementUtil.isMoving()) {
-                    if (mc.player.squaredDistanceTo(packet.getX(), packet.getY(), packet.getZ()) < 200) {
-                        double speed = Math.sqrt(
-                                Math.abs(packet.getPlayerVelocityX() * packet.getPlayerVelocityX())
-                                        + Math.abs(packet.getPlayerVelocityZ() * packet.getPlayerVelocityZ()));
+                if (this.explosions.getValue()) {
+                    if (mc.player.getPos().distanceTo(new Vec3d(packet.getX(), packet.getY(), packet.getZ())) < 15) {
+                        double speed = Math.sqrt(packet.getPlayerVelocityX() * packet.getPlayerVelocityX()
+                                + packet.getPlayerVelocityZ() * packet.getPlayerVelocityZ());
                         this.lastExp = this.expTimer
-                                .passedMs(this.coolDown.getValueInt())
+                                .passed(this.coolDown.getValueInt())
                                 ? speed
                                 : (speed - this.lastExp);
 
@@ -161,29 +157,39 @@ public class Speed extends Module {
                     }
                 }
             }
-        } else {
-            if (event.getPacket() instanceof PlayerPositionLookS2CPacket) {
-                resetStrafe();
-            }
+        }
+        if (event.getPacket() instanceof PlayerPositionLookS2CPacket) {
+            lagTimer.reset();
+            resetStrafe();
         }
     }
 
-    @Override
-    public void onUpdate() {
+    @EventListener
+    public void onMove(MovedEvent event) {
+        if (nullCheck()) return;
         double dx = mc.player.getX() - mc.player.prevX;
         double dz = mc.player.getZ() - mc.player.prevZ;
         distance = Math.sqrt(dx * dx + dz * dz);
-        if (mode.is(Mode.GrimCollide)) {
+    }
+
+    @EventListener
+    public void onUpdate(UpdateEvent event) {
+        if (mode.is(Mode.Grim)) {
             if (!MovementUtil.isMoving()) {
                 return;
             }
 
             int collisions = 0;
-            Box box = mc.player.getBoundingBox().expand(1.0);
+            Box box = strict.getValue() ? mc.player.getBoundingBox() : mc.player.getBoundingBox().expand(1.0);
 
-            for (Entity entity : mc.world.getEntities()) {
+            for (Entity entity : Alien.THREAD.getEntities()) {
                 Box entityBox = entity.getBoundingBox();
-                if (canCauseSpeed(entity) && box.intersects(entityBox)) {
+                if (boat.getValue() && mc.player.isOnGround() && entity instanceof BoatEntity && box.intersects(entityBox.expand(boatExpand.getValue()))) {
+                    double yaw = Math.toRadians(Sprint.getSprintYaw(mc.player.getYaw()));
+                    double boost = boatSpeed.getValue();
+                    mc.player.setVelocity(-Math.sin(yaw) * boost, boatJump.getValue(), Math.cos(yaw) * boost);
+                    return;
+                } else if (box.intersects(entityBox) && canCauseSpeed(entity)) {
                     collisions++;
                 }
             }
@@ -198,17 +204,16 @@ public class Speed extends Module {
         return entity != mc.player && entity instanceof LivingEntity && !(entity instanceof ArmorStandEntity);
     }
 
-    @EventHandler
+    @EventListener
     public void invoke(MoveEvent event) {
-        if (Glide.INSTANCE != null && Glide.INSTANCE.isOn() && mc.player.hasStatusEffect(StatusEffects.SLOW_FALLING)) return;
-        if (!MovementUtil.isMoving() && airStop.getValue() && !mode.is(Mode.GrimCollide)) {
+        if (!MovementUtil.isMoving() && airStop.getValue() && !mode.is(Mode.Grim)) {
             MovementUtil.setMotionX(0);
             MovementUtil.setMotionZ(0);
         }
         if (!this.inWater.getValue() && (mc.player.isSubmergedInWater() || mc.player.isTouchingWater() || mc.player.isInLava())
                 || mc.player.isRiding()
                 || mc.player.isHoldingOntoLadder()
-                || !inBlock.getValue() && Alien.PLAYER.insideBlock
+                || !inBlock.getValue() && EntityUtil.isInsideBlock()
                 || mc.player.getAbilities().flying
                 || mc.player.isFallFlying()
                 || !MovementUtil.isMoving()) {
@@ -216,14 +221,14 @@ public class Speed extends Module {
             this.stop = true;
             return;
         }
-        if (mode.is(Mode.Custom)) {
+        if (mode.is(Mode.Strafe)) {
 
             if (this.stop) {
                 this.stop = false;
                 return;
             }
 
-            if (!lagTimer.passedMs(this.lagTime.getValueInt())) {
+            if (!lagTimer.passed(this.lagTime.getValueInt())) {
                 return;
             }
 
@@ -240,7 +245,7 @@ public class Speed extends Module {
 
                 this.boost = !this.boost;
             } else {
-                if ((mc.world.canCollide(null,
+                if ((BlockUtil.canCollide(null,
                         mc.player
                                 .getBoundingBox()
                                 .offset(0.0, MovementUtil.getMotionY(), 0.0))
@@ -254,8 +259,8 @@ public class Speed extends Module {
 
             this.speed = Math.min(this.speed, 10);
             this.speed = Math.max(this.speed, MovementUtil.getSpeed(this.slow.getValue(), this.strafeSpeed.getValue()));
-            double n = MovementUtil.getMoveForward();
-            double n2 = MovementUtil.getMoveStrafe();
+            double n = mc.player.input.movementForward;
+            double n2 = mc.player.input.movementSideways;
             double n3 = mc.player.getYaw();
             if (n == 0.0 && n2 == 0.0) {
                 event.setX(0.0);
@@ -328,7 +333,7 @@ public class Speed extends Module {
     public Vec2f handleStrafeMotion(final float speed) {
         float forward = mc.player.input.movementForward;
         float strafe = mc.player.input.movementSideways;
-        float yaw = mc.player.prevYaw + (mc.player.getYaw() - mc.player.prevYaw) * mc.getTickDelta();
+        float yaw = mc.player.prevYaw + (mc.player.getYaw() - mc.player.prevYaw) * mc.getRenderTickCounter().getTickDelta(true);
         if (forward == 0.0f && strafe == 0.0f) {
             return Vec2f.ZERO;
         } else if (forward != 0.0f) {
@@ -356,5 +361,11 @@ public class Speed extends Module {
         strictTicks = 0;
         speed = 0.0f;
         distance = 0.0;
+    }
+
+    public enum Mode {
+        Strafe,
+        StrafeStrict,
+        Grim,
     }
 }

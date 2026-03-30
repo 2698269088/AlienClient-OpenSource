@@ -11,7 +11,6 @@ uniform float radius;
 uniform float divider;
 uniform float maxSample;
 
-
 out vec4 fragColor;
 
 float snow(vec2 uv, float scale)
@@ -64,7 +63,6 @@ void main(){
     } else {
         alpha = glowShader();
     }
-
 
     fragColor = vec4(finalColor, alpha);
 }

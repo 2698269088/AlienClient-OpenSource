@@ -1,11 +1,12 @@
 package dev.luminous.mod.modules.impl.movement;
 
-import dev.luminous.mod.modules.settings.impl.SliderSetting;
-import dev.luminous.api.utils.entity.MovementUtil;
+import dev.luminous.api.events.eventbus.EventListener;
+import dev.luminous.api.events.impl.UpdateEvent;
+import dev.luminous.api.utils.player.MovementUtil;
 import dev.luminous.api.utils.world.BlockPosX;
 import dev.luminous.mod.modules.Module;
+import dev.luminous.mod.modules.settings.impl.SliderSetting;
 import net.minecraft.block.Blocks;
-
 
 public class AntiVoid extends Module {
 
@@ -19,8 +20,8 @@ public class AntiVoid extends Module {
         setChinese("反虚空");
     }
 
-    @Override
-    public void onUpdate() {
+    @EventListener
+    public void onUpdate(UpdateEvent event) {
         boolean isVoid = true;
 
         for (int i = (int) mc.player.getY(); i > voidHeight.getValueInt() - 1; --i) {

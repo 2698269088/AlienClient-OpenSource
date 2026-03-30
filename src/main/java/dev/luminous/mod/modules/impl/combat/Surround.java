@@ -1,104 +1,203 @@
 package dev.luminous.mod.modules.impl.combat;
 
 import dev.luminous.Alien;
-import dev.luminous.api.events.eventbus.EventHandler;
-import dev.luminous.api.events.impl.LookAtEvent;
+import dev.luminous.api.events.eventbus.EventListener;
+import dev.luminous.api.events.impl.ClientTickEvent;
 import dev.luminous.api.events.impl.MoveEvent;
-import dev.luminous.api.events.impl.UpdateWalkingPlayerEvent;
-import dev.luminous.core.impl.CommandManager;
+import dev.luminous.api.events.impl.RotationEvent;
 import dev.luminous.api.utils.combat.CombatUtil;
-import dev.luminous.api.utils.entity.EntityUtil;
-import dev.luminous.api.utils.entity.InventoryUtil;
-import dev.luminous.api.utils.entity.MovementUtil;
 import dev.luminous.api.utils.math.Timer;
+import dev.luminous.api.utils.player.EntityUtil;
+import dev.luminous.api.utils.player.InventoryUtil;
+import dev.luminous.api.utils.player.MovementUtil;
+import dev.luminous.api.utils.world.BlockPosX;
 import dev.luminous.api.utils.world.BlockUtil;
+import dev.luminous.core.impl.CommandManager;
 import dev.luminous.mod.modules.Module;
-import dev.luminous.mod.modules.impl.client.AntiCheat;
+import dev.luminous.mod.modules.impl.exploit.Blink;
+import dev.luminous.mod.modules.impl.movement.ElytraFly;
+import dev.luminous.mod.modules.impl.movement.Velocity;
+import dev.luminous.mod.modules.impl.player.PacketMine;
+import dev.luminous.mod.modules.settings.enums.Timing;
 import dev.luminous.mod.modules.settings.impl.BooleanSetting;
 import dev.luminous.mod.modules.settings.impl.EnumSetting;
 import dev.luminous.mod.modules.settings.impl.SliderSetting;
 import net.minecraft.block.Blocks;
-import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.util.Hand;
 import net.minecraft.util.math.*;
 
+import java.util.Objects;
+
 public class Surround extends Module {
     public static Surround INSTANCE;
-    private final Timer timer = new Timer();
     public final EnumSetting<Page> page = add(new EnumSetting<>("Page", Page.General));
     public final SliderSetting placeDelay =
             add(new SliderSetting("PlaceDelay", 50, 0, 500, () -> page.is(Page.General)));
-    private final SliderSetting blocksPer =
-            add(new SliderSetting("BlocksPer", 1, 1, 8, () -> page.is(Page.General)));
-    private final BooleanSetting packetPlace =
-            add(new BooleanSetting("PacketPlace", true, () -> page.is(Page.General)));
-    private final BooleanSetting onlyTick =
-            add(new BooleanSetting("OnlyTick", true, () -> page.is(Page.General)));
-    private final BooleanSetting breakCrystal =
-            add(new BooleanSetting("Break", true, () -> page.is(Page.General)).setParent());
-    private final BooleanSetting eatPause =
-            add(new BooleanSetting("EatingPause", true, () -> breakCrystal.isOpen()));
-    private final BooleanSetting center =
-            add(new BooleanSetting("Center", true, () -> page.is(Page.General)));
+    private final BooleanSetting mineDownward = add(new BooleanSetting("MineDownward", false, () -> page.is(Page.General)));
     public final BooleanSetting extend =
             add(new BooleanSetting("Extend", true, () -> page.is(Page.General))).setParent();
     public final BooleanSetting onlySelf =
             add(new BooleanSetting("OnlySelf", false, () -> page.is(Page.General) && extend.isOpen()));
+    public final BooleanSetting inAir =
+            add(new BooleanSetting("InAir", true, () -> page.is(Page.Check)));
+    private final Timer timer = new Timer();
+    private final SliderSetting blocksPer =
+            add(new SliderSetting("BlocksPer", 1, 1, 8, () -> page.is(Page.General)));
+    private final BooleanSetting packetPlace =
+            add(new BooleanSetting("PacketPlace", true, () -> page.is(Page.General)));
+    private final EnumSetting<Timing> timing =
+            add(new EnumSetting<>("Timing", Timing.All, () -> page.is(Page.General)));
+    private final BooleanSetting breakCrystal =
+            add(new BooleanSetting("Break", true, () -> page.is(Page.General)).setParent());
+    private final BooleanSetting eatPause =
+            add(new BooleanSetting("EatingPause", true, () -> page.is(Page.General) && breakCrystal.isOpen()));
+    private final BooleanSetting center =
+            add(new BooleanSetting("Center", true, () -> page.is(Page.General)));
     private final BooleanSetting inventory =
             add(new BooleanSetting("InventorySwap", true, () -> page.is(Page.General)));
     private final BooleanSetting enderChest =
             add(new BooleanSetting("EnderChest", true, () -> page.is(Page.General)));
-
     private final BooleanSetting rotate =
             add(new BooleanSetting("Rotate", true, () -> page.getValue() == Page.Rotate));
     private final BooleanSetting yawStep =
-            add(new BooleanSetting("YawStep", false, () -> page.getValue() == Page.Rotate));
+            add(new BooleanSetting("YawStep", false, () -> rotate.isOpen() && page.getValue() == Page.Rotate).setParent());
+    private final BooleanSetting whenElytra =
+            add(new BooleanSetting("FallFlying", true, () -> rotate.isOpen() && yawStep.isOpen() && page.getValue() == Page.Rotate));
     private final SliderSetting steps =
-            add(new SliderSetting("Steps", 0.05, 0, 1, 0.01, () -> page.getValue() == Page.Rotate));
+            add(new SliderSetting("Steps", 0.05, 0, 1, 0.01, () -> page.getValue() == Page.Rotate && yawStep.isOpen()));
     private final BooleanSetting checkFov =
-            add(new BooleanSetting("OnlyLooking", true, () -> page.getValue() == Page.Rotate));
+            add(new BooleanSetting("OnlyLooking", true, () -> page.getValue() == Page.Rotate && yawStep.isOpen()).setParent());
     private final SliderSetting fov =
-            add(new SliderSetting("Fov", 5f, 0f, 30f, () -> checkFov.getValue() && page.getValue() == Page.Rotate));
-    private final SliderSetting priority = add(new SliderSetting("Priority", 10,0 ,100, () ->page.getValue() == Page.Rotate));
-
-    
+            add(new SliderSetting("Fov", 20, 0, 360, 0.1, () -> checkFov.isOpen() && page.getValue() == Page.Rotate && yawStep.isOpen()));
+    private final SliderSetting priority = add(new SliderSetting("Priority", 10, 0, 100, () -> page.getValue() == Page.Rotate && yawStep.isOpen()));
     private final BooleanSetting detectMining =
             add(new BooleanSetting("DetectMining", false, () -> page.is(Page.Check)));
     private final BooleanSetting usingPause =
             add(new BooleanSetting("UsingPause", true, () -> page.is(Page.Check)));
-    public final BooleanSetting inAir =
-            add(new BooleanSetting("InAir", true, () -> page.is(Page.Check)));
     private final BooleanSetting moveDisable =
             add(new BooleanSetting("MoveDisable", true, () -> page.is(Page.Check)));
     private final BooleanSetting jumpDisable =
             add(new BooleanSetting("JumpDisable", true, () -> page.is(Page.Check)));
-    public enum Page {
-        General,
-        Rotate,
-        Check,
-    }
-    
+    public Vec3d directionVec = null;
     double startX = 0;
     double startY = 0;
     double startZ = 0;
     int progress = 0;
+    private boolean shouldCenter = true;
+
     public Surround() {
         super("Surround", "Surrounds you with Obsidian", Category.Combat);
         setChinese("围脚");
         INSTANCE = this;
     }
-    public Vec3d directionVec = null;
-    @EventHandler
-    public void onRotate(LookAtEvent event) {
-        if (directionVec != null && rotate.getValue() && yawStep.getValue()) {
+
+    public static boolean selfIntersectPos(BlockPos pos) {
+        return mc.player.getBoundingBox().intersects(new Box(pos));
+    }
+
+    public static boolean otherIntersectPos(BlockPos pos) {
+        for (AbstractClientPlayerEntity player : Alien.THREAD.getPlayers()) {
+            if (player.getBoundingBox().intersects(new Box(pos))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static Vec2f getRotationTo(Vec3d posFrom, Vec3d posTo) {
+        Vec3d vec3d = posTo.subtract(posFrom);
+        return getRotationFromVec(vec3d);
+    }
+
+    private static Vec2f getRotationFromVec(Vec3d vec) {
+        double d = vec.x;
+        double d2 = vec.z;
+        double xz = Math.hypot(d, d2);
+        d2 = vec.z;
+        double d3 = vec.x;
+        double yaw = normalizeAngle(Math.toDegrees(Math.atan2(d2, d3)) - 90.0);
+        double pitch = normalizeAngle(Math.toDegrees(-Math.atan2(vec.y, xz)));
+        return new Vec2f((float) yaw, (float) pitch);
+    }
+
+    private static double normalizeAngle(double angleIn) {
+        double angle = angleIn;
+        if ((angle %= 360.0) >= 180.0) {
+            angle -= 360.0;
+        }
+        if (angle < -180.0) {
+            angle += 360.0;
+        }
+        return angle;
+    }
+
+    @EventListener
+    public void onRotate(RotationEvent event) {
+        if (directionVec != null && rotate.getValue() && shouldYawStep()) {
             event.setTarget(directionVec, steps.getValueFloat(), priority.getValueFloat());
         }
     }
 
-    @EventHandler
-    public void onUpdateWalking(UpdateWalkingPlayerEvent event) {
-        if (!onlyTick.getValue()) {
-            onUpdate();
+    @EventListener
+    public void onTick(ClientTickEvent event) {
+        if (nullCheck()) return;
+        if (inventory.getValue() && !EntityUtil.inInventory()) return;
+        if (timing.is(Timing.Pre) && event.isPost() || timing.is(Timing.Post) && event.isPre()) return;
+        if (!timer.passed((long) placeDelay.getValue())) return;
+        directionVec = null;
+        progress = 0;
+        if (!MovementUtil.isMoving() && !mc.options.jumpKey.isPressed()) {
+            startX = mc.player.getX();
+            startY = mc.player.getY();
+            startZ = mc.player.getZ();
+        }
+
+        double distanceToStart = MathHelper.sqrt((float) mc.player.squaredDistanceTo(startX, startY, startZ));
+
+        if (getBlock() == -1) {
+            CommandManager.sendMessageId("§4No block found", hashCode() - 1);
+            disable();
+            return;
+        }
+        if ((moveDisable.getValue() && distanceToStart > 1.0 || jumpDisable.getValue() && mc.player.input.jumping)) {
+            disable();
+            return;
+        }
+        if (Blink.INSTANCE.isOn() && Blink.INSTANCE.pauseModule.getValue()) return;
+        if (usingPause.getValue() && mc.player.isUsingItem()) {
+            return;
+        }
+
+        if (!inAir.getValue() && !mc.player.isOnGround()) return;
+        doSurround(new BlockPosX(mc.player.getX(), mc.player.getY(), mc.player.getZ()));
+        doSurround(new BlockPosX(mc.player.getX(), mc.player.getY() + 0.8, mc.player.getZ()));
+    }
+
+    public void doSurround(BlockPos pos) {
+        for (Direction i : Direction.values()) {
+            if (i == Direction.UP) continue;
+            BlockPos offsetPos = pos.offset(i);
+            if (BlockUtil.getPlaceSide(offsetPos) != null) {
+                tryPlaceBlock(offsetPos);
+            } else if (BlockUtil.canReplace(offsetPos)) {
+                tryPlaceBlock(getHelperPos(offsetPos));
+            }
+            if ((selfIntersectPos(offsetPos) || !onlySelf.getValue() && otherIntersectPos(offsetPos)) && extend.getValue()) {
+                for (Direction i2 : Direction.values()) {
+                    if (i2 == Direction.UP) continue;
+                    BlockPos offsetPos2 = offsetPos.offset(i2);
+                    if (selfIntersectPos(offsetPos2) || !onlySelf.getValue() && otherIntersectPos(offsetPos2)) {
+                        for (Direction i3 : Direction.values()) {
+                            if (i3 == Direction.UP) continue;
+                            tryPlaceBlock(offsetPos2);
+                            BlockPos offsetPos3 = offsetPos2.offset(i3);
+                            tryPlaceBlock(BlockUtil.getPlaceSide(offsetPos3) != null || !BlockUtil.canReplace(offsetPos3) ? offsetPos3 : getHelperPos(offsetPos3));
+                        }
+                    }
+                    tryPlaceBlock(BlockUtil.getPlaceSide(offsetPos2) != null || !BlockUtil.canReplace(offsetPos2) ? offsetPos2 : getHelperPos(offsetPos2));
+                }
+            }
         }
     }
 
@@ -114,9 +213,13 @@ public class Surround extends Module {
         shouldCenter = true;
     }
 
-    private boolean shouldCenter = true;
+    private boolean shouldYawStep() {
+        if (!whenElytra.getValue() && (mc.player.isFallFlying() || ElytraFly.INSTANCE.isOn() && ElytraFly.INSTANCE.isFallFlying()))
+            return false;
+        return yawStep.getValue() && !Velocity.INSTANCE.noRotation();
+    }
 
-    @EventHandler(priority = -1)
+    @EventListener(priority = -1)
     public void onMove(MoveEvent event) {
         if (nullCheck() || !center.getValue() || mc.player.isFallFlying()) {
             return;
@@ -144,64 +247,15 @@ public class Surround extends Module {
         }
     }
 
-    @Override
-    public void onUpdate() {
-        if (!timer.passedMs((long) placeDelay.getValue())) return;
-        directionVec = null;
-        progress = 0;
-        if (!MovementUtil.isMoving() && !mc.options.jumpKey.isPressed()) {
-            startX = mc.player.getX();
-            startY = mc.player.getY();
-            startZ = mc.player.getZ();
-        }
-        BlockPos pos = EntityUtil.getPlayerPos(true);
-
-        double distanceToStart = MathHelper.sqrt((float) mc.player.squaredDistanceTo(startX, startY, startZ));
-
-        if (getBlock() == -1) {
-            CommandManager.sendChatMessageWidthId("§c§oObsidian" + (enderChest.getValue() ? "/EnderChest" : "") + "?", hashCode());
-            disable();
-            return;
-        }
-        if ((moveDisable.getValue() && distanceToStart > 1.0 || jumpDisable.getValue() && Math.abs(startY - mc.player.getY()) > 0.5)) {
-            disable();
-            return;
-        }
-        if (usingPause.getValue() && mc.player.isUsingItem()) {
-            return;
-        }
-
-        if (!inAir.getValue() && !mc.player.isOnGround()) return;
-        for (Direction i : Direction.values()) {
-            if (i == Direction.UP) continue;
-            BlockPos offsetPos = pos.offset(i);
-            if (BlockUtil.getPlaceSide(offsetPos) != null) {
-                tryPlaceBlock(offsetPos);
-            } else if (BlockUtil.canReplace(offsetPos)) {
-                tryPlaceBlock(getHelperPos(offsetPos));
-            }
-            if ((selfIntersectPos(offsetPos) || !onlySelf.getValue() && otherIntersectPos(offsetPos)) && extend.getValue()) {
-                for (Direction i2 : Direction.values()) {
-                    if (i2 == Direction.UP) continue;
-                    BlockPos offsetPos2 = offsetPos.offset(i2);
-                    if (selfIntersectPos(offsetPos2)|| !onlySelf.getValue() && otherIntersectPos(offsetPos2)) {
-                        for (Direction i3 : Direction.values()) {
-                            if (i3 == Direction.UP) continue;
-                            tryPlaceBlock(offsetPos2);
-                            BlockPos offsetPos3 = offsetPos2.offset(i3);
-                            tryPlaceBlock(BlockUtil.getPlaceSide(offsetPos3) != null || !BlockUtil.canReplace(offsetPos3) ? offsetPos3 : getHelperPos(offsetPos3));
-                        }
-                    }
-                    tryPlaceBlock(BlockUtil.getPlaceSide(offsetPos2) != null || !BlockUtil.canReplace(offsetPos2) ? offsetPos2 : getHelperPos(offsetPos2));
-                }
-            }
-        }
-    }
-
     private void tryPlaceBlock(BlockPos pos) {
         if (pos == null) return;
         if (detectMining.getValue() && Alien.BREAK.isMining(pos)) return;
         if (!(progress < blocksPer.getValue())) return;
+        BlockPos self = EntityUtil.getPlayerPos(true);
+        if (mineDownward.getValue()) {
+            if (Objects.equals(PacketMine.getBreakPos(), self.down()) && Objects.equals(PacketMine.getBreakPos(), pos))
+                return;
+        }
         int block = getBlock();
         if (block == -1) return;
         Direction side = BlockUtil.getPlaceSide(pos);
@@ -216,27 +270,27 @@ public class Surround extends Module {
         } else if (BlockUtil.hasEntity(pos, false)) return;
         int old = mc.player.getInventory().selectedSlot;
         doSwap(block);
-        if (BlockUtil.airPlace()) {
-            BlockUtil.placedPos.add(pos);
-            BlockUtil.clickBlock(pos, Direction.DOWN, false, Hand.MAIN_HAND, packetPlace.getValue());
+        BlockUtil.placedPos.add(pos);
+        if (BlockUtil.allowAirPlace()) {
+            BlockUtil.airPlace(pos, false, Hand.MAIN_HAND, packetPlace.getValue());
         } else {
-            BlockUtil.placedPos.add(pos);
             BlockUtil.clickBlock(pos.offset(side), side.getOpposite(), false, Hand.MAIN_HAND, packetPlace.getValue());
         }
+        timer.reset();
         if (inventory.getValue()) {
             doSwap(block);
             EntityUtil.syncInventory();
         } else {
             doSwap(old);
         }
-        if (rotate.getValue() && !yawStep.getValue() && AntiCheat.INSTANCE.snapBack.getValue()) {
+        if (rotate.getValue() && !shouldYawStep()) {
             Alien.ROTATION.snapBack();
         }
         progress++;
-        timer.reset();
     }
+
     private boolean faceVector(Vec3d directionVec) {
-        if (!yawStep.getValue()) {
+        if (!shouldYawStep()) {
             Alien.ROTATION.lookAt(directionVec);
             return true;
         } else {
@@ -247,17 +301,7 @@ public class Surround extends Module {
         }
         return !checkFov.getValue();
     }
-    public static boolean selfIntersectPos(BlockPos pos) {
-        return mc.player.getBoundingBox().intersects(new Box(pos));
-    }
-    public static boolean otherIntersectPos(BlockPos pos) {
-        for (PlayerEntity player : mc.world.getPlayers()) {
-            if (player.getBoundingBox().intersects(new Box(pos))) {
-                return true;
-            }
-        }
-        return false;
-    }
+
     private void doSwap(int slot) {
         if (inventory.getValue()) {
             InventoryUtil.inventorySwap(slot, mc.player.getInventory().selectedSlot);
@@ -289,30 +333,9 @@ public class Surround extends Module {
         return null;
     }
 
-    public static Vec2f getRotationTo(Vec3d posFrom, Vec3d posTo) {
-        Vec3d vec3d = posTo.subtract(posFrom);
-        return getRotationFromVec(vec3d);
-    }
-
-    private static Vec2f getRotationFromVec(Vec3d vec) {
-        double d = vec.x;
-        double d2 = vec.z;
-        double xz = Math.hypot(d, d2);
-        d2 = vec.z;
-        double d3 = vec.x;
-        double yaw = normalizeAngle(Math.toDegrees(Math.atan2(d2, d3)) - 90.0);
-        double pitch = normalizeAngle(Math.toDegrees(-Math.atan2(vec.y, xz)));
-        return new Vec2f((float) yaw, (float) pitch);
-    }
-
-    private static double normalizeAngle(double angleIn) {
-        double angle = angleIn;
-        if ((angle %= 360.0) >= 180.0) {
-            angle -= 360.0;
-        }
-        if (angle < -180.0) {
-            angle += 360.0;
-        }
-        return angle;
+    public enum Page {
+        General,
+        Rotate,
+        Check,
     }
 }

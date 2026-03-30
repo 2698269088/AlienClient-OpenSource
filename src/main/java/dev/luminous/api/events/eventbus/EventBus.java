@@ -12,20 +12,10 @@ import java.util.function.Function;
  * Default implementation of {@link IEventBus}.
  */
 public class EventBus implements IEventBus {
-    private static class LambdaFactoryInfo {
-        public final LambdaListener.Factory factory;
-
-        public LambdaFactoryInfo(LambdaListener.Factory factory) {
-            this.factory = factory;
-        }
-    }
-
+    public final Map<Class<?>, List<IListener>> listenerMap = new ConcurrentHashMap<>();
     private final Map<Object, List<IListener>> listenerCache = new ConcurrentHashMap<>();
     private final Map<Class<?>, List<IListener>> staticListenerCache = new ConcurrentHashMap<>();
-
-    public final Map<Class<?>, List<IListener>> listenerMap = new ConcurrentHashMap<>();
-
-    public final List<LambdaFactoryInfo> lambdaFactoryInfos = new ArrayList<>();
+    private final List<LambdaFactoryInfo> lambdaFactoryInfos = new ArrayList<>();
 
     @Override
     public void registerLambdaFactory(LambdaListener.Factory factory) {
@@ -82,9 +72,9 @@ public class EventBus implements IEventBus {
 
     private void subscribe(IListener listener, boolean onlyStatic) {
         if (onlyStatic) {
-            if (listener.isStatic()) insert(listenerMap.computeIfAbsent(listener.getTarget(), aClass -> new CopyOnWriteArrayList<>()), listener);
-        }
-        else {
+            if (listener.isStatic())
+                insert(listenerMap.computeIfAbsent(listener.getTarget(), aClass -> new CopyOnWriteArrayList<>()), listener);
+        } else {
             insert(listenerMap.computeIfAbsent(listener.getTarget(), aClass -> new CopyOnWriteArrayList<>()), listener);
         }
     }
@@ -123,8 +113,7 @@ public class EventBus implements IEventBus {
         if (l != null) {
             if (staticOnly) {
                 if (listener.isStatic()) l.remove(listener);
-            }
-            else l.remove(listener);
+            } else l.remove(listener);
         }
     }
 
@@ -160,7 +149,7 @@ public class EventBus implements IEventBus {
     }
 
     private boolean isValid(Method method) {
-        if (!method.isAnnotationPresent(EventHandler.class)) return false;
+        if (!method.isAnnotationPresent(EventListener.class)) return false;
         if (method.getReturnType() != void.class) return false;
         if (method.getParameterCount() != 1) return false;
 
@@ -175,5 +164,8 @@ public class EventBus implements IEventBus {
         }
 
         throw new NoLambdaFactoryException(klass);
+    }
+
+    private record LambdaFactoryInfo(LambdaListener.Factory factory) {
     }
 }

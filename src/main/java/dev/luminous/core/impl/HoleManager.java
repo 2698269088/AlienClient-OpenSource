@@ -1,11 +1,13 @@
 package dev.luminous.core.impl;
 
+import dev.luminous.Alien;
 import dev.luminous.api.utils.Wrapper;
 import dev.luminous.api.utils.world.BlockUtil;
-import dev.luminous.Alien;
+import dev.luminous.mod.modules.impl.combat.Breaker;
 import net.minecraft.block.Block;
 import net.minecraft.block.Blocks;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 
@@ -22,13 +24,13 @@ public class HoleManager implements Wrapper {
                 blockProgress++;
         }
         return (!checkTrap || (mc.world.isAir(pos)
-                        && mc.world.isAir(pos.up())
-                        && mc.world.isAir(pos.up(1))
-                        && mc.world.isAir(pos.up(2))
-                        && (mc.player.getBlockY() - 1 <= pos.getY() || mc.world.isAir(pos.up(3)))
-                        && (mc.player.getBlockY() - 2 <= pos.getY() || mc.world.isAir(pos.up(4)))))
-                        && blockProgress > 3
-                        && (!canStand || mc.world.getBlockState(pos.add(0, -1, 0)).blocksMovement());
+                && mc.world.isAir(pos.up())
+                && mc.world.isAir(pos.up(1))
+                && mc.world.isAir(pos.up(2))
+                && (mc.player.getBlockY() - 1 <= pos.getY() || mc.world.isAir(pos.up(3)))
+                && (mc.player.getBlockY() - 2 <= pos.getY() || mc.world.isAir(pos.up(4)))))
+                && blockProgress > 3
+                && (!canStand || BlockUtil.canCollide(new Box(pos.add(0, -1, 0))));
     }
 
     public BlockPos getHole(float range, boolean doubleHole, boolean any, boolean up) {
@@ -49,6 +51,7 @@ public class HoleManager implements Wrapper {
         }
         return bestPos;
     }
+
     public boolean isDoubleHole(BlockPos pos) {
         Direction unHardFacing = is3Block(pos);
         if (unHardFacing != null) {
@@ -58,6 +61,7 @@ public class HoleManager implements Wrapper {
         }
         return false;
     }
+
     public Direction is3Block(BlockPos pos) {
         if (!isHard(pos.down())) {
             return null;
@@ -96,6 +100,10 @@ public class HoleManager implements Wrapper {
 
     public boolean isHard(BlockPos pos) {
         Block block = mc.world.getBlockState(pos).getBlock();
-        return block == Blocks.OBSIDIAN || block == Blocks.NETHERITE_BLOCK || block == Blocks.ENDER_CHEST || block == Blocks.BEDROCK;
+        return isHard(block);
+    }
+
+    public boolean isHard(Block block) {
+        return block == Blocks.BEDROCK || Breaker.hard.contains(block);
     }
 }

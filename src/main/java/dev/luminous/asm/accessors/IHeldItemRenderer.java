@@ -7,21 +7,21 @@ import org.spongepowered.asm.mixin.gen.Accessor;
 
 @Mixin(HeldItemRenderer.class)
 public interface IHeldItemRenderer {
-    @Accessor(value="equipProgressMainHand")
-    void setEquippedProgressMainHand(float var1);
-
-    @Accessor(value="equipProgressOffHand")
-    void setEquippedProgressOffHand(float var1);
-
-    @Accessor(value="equipProgressMainHand")
+    @Accessor(value = "equipProgressMainHand")
     float getEquippedProgressMainHand();
 
-    @Accessor(value="equipProgressOffHand")
+    @Accessor(value = "equipProgressMainHand")
+    void setEquippedProgressMainHand(float var1);
+
+    @Accessor(value = "equipProgressOffHand")
     float getEquippedProgressOffHand();
 
-    @Accessor(value="mainHand")
+    @Accessor(value = "equipProgressOffHand")
+    void setEquippedProgressOffHand(float var1);
+
+    @Accessor(value = "mainHand")
     void setItemStackMainHand(ItemStack var1);
 
-    @Accessor(value="offHand")
+    @Accessor(value = "offHand")
     void setItemStackOffHand(ItemStack var1);
 }

@@ -1,9 +1,8 @@
 package dev.luminous.api.events.impl;
 
-import dev.luminous.api.events.Event;
-
-public class GameLeftEvent extends Event {
-    public GameLeftEvent() {
-        super(Stage.Post);
+public class GameLeftEvent {
+    private GameLeftEvent() {
     }
+
+    public static final GameLeftEvent INSTANCE = new GameLeftEvent();
 }

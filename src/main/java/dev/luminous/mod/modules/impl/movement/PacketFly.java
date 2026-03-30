@@ -1,15 +1,17 @@
 package dev.luminous.mod.modules.impl.movement;
 
+import dev.luminous.api.events.eventbus.EventListener;
+import dev.luminous.api.events.impl.MoveEvent;
+import dev.luminous.api.events.impl.PacketEvent;
+import dev.luminous.api.events.impl.TickEvent;
+import dev.luminous.api.events.impl.UpdateEvent;
+import dev.luminous.api.utils.player.MovementUtil;
+import dev.luminous.api.utils.world.BlockUtil;
+import dev.luminous.mod.modules.Module;
 import dev.luminous.mod.modules.settings.impl.BooleanSetting;
 import dev.luminous.mod.modules.settings.impl.EnumSetting;
 import dev.luminous.mod.modules.settings.impl.SliderSetting;
 import io.netty.util.internal.ConcurrentSet;
-import dev.luminous.api.events.eventbus.EventHandler;
-import dev.luminous.api.events.impl.MoveEvent;
-import dev.luminous.api.events.impl.PacketEvent;
-import dev.luminous.api.events.impl.UpdateWalkingPlayerEvent;
-import dev.luminous.api.utils.entity.MovementUtil;
-import dev.luminous.mod.modules.Module;
 import net.minecraft.client.gui.screen.DownloadingTerrainScreen;
 import net.minecraft.network.packet.Packet;
 import net.minecraft.network.packet.c2s.play.ClientCommandC2SPacket;
@@ -26,6 +28,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class PacketFly extends Module {
+    public static PacketFly INSTANCE;
     public final EnumSetting<Mode> mode = add(new EnumSetting<>("Mode", Mode.Factor));
     public final SliderSetting factor = add(new SliderSetting("Factor", 1.0f, 0.0f, 10.0f));
     public final EnumSetting<Phase> phase = add(new EnumSetting<>("Phase", Phase.Full));
@@ -61,8 +64,8 @@ public class PacketFly extends Module {
     public PacketFly() {
         super("PacketFly", Category.Movement);
         setChinese("发包飞行");
+        INSTANCE = this;
     }
-
 
     @Override
     public void onLogin() {
@@ -70,13 +73,13 @@ public class PacketFly extends Module {
         clearValues();
     }
 
-    @Override
-    public void onUpdate() {
+    @EventListener
+    public void onUpdate(UpdateEvent event) {
         posLooks.entrySet().removeIf(entry -> System.currentTimeMillis() - entry.getValue().getTime() > TimeUnit.SECONDS.toMillis(30L));
     }
 
-    @EventHandler
-    public void invoke(UpdateWalkingPlayerEvent event) {
+    @EventListener
+    public void invoke(TickEvent event) {
         if (event.isPre() && this.mode.getValue() != Mode.Compatibility) {
             MovementUtil.setMotionX(0);
             MovementUtil.setMotionY(0);
@@ -141,7 +144,7 @@ public class PacketFly extends Module {
         }
     }
 
-    @EventHandler
+    @EventListener
     public void invoke(PacketEvent.Receive event) {
         if (nullCheck()) return;
         if (this.mode.getValue() == Mode.Compatibility) {
@@ -162,7 +165,7 @@ public class PacketFly extends Module {
         }
     }
 
-    @EventHandler
+    @EventListener
     public void invoke(MoveEvent event) {
         if (this.phase.getValue() == Phase.Semi || this.isPlayerCollisionBoundingBoxEmpty()) {
             mc.player.noClip = true;
@@ -184,7 +187,7 @@ public class PacketFly extends Module {
         }
     }
 
-    @EventHandler
+    @EventListener
     public void onPacket(PacketEvent.Send event) {
         if (event.getPacket() instanceof PlayerMoveC2SPacket packet) {
             if (mode.getValue() != Mode.Compatibility && !playerPackets.remove(event.getPacket())) {
@@ -221,7 +224,7 @@ public class PacketFly extends Module {
 
     public boolean isPlayerCollisionBoundingBoxEmpty() {
         double o = bbOffset.getValue() ? -0.0625 : 0;
-        return mc.world.canCollide(mc.player, mc.player.getBoundingBox().expand(o, o, o));
+        return BlockUtil.canCollide(mc.player, mc.player.getBoundingBox().expand(o, o, o));
     }
 
     public boolean checkPackets(int amount) {
@@ -290,7 +293,7 @@ public class PacketFly extends Module {
                 return vec3d.add(0, invalid, 0);
             }
         }, Preserve() {
-            private final Random random = new Random();
+            final Random random = new Random();
 
             private int randomInt() {
                 int result = random.nextInt(29000000);
@@ -306,7 +309,7 @@ public class PacketFly extends Module {
                 return vec3d.add(randomInt(), 0, randomInt());
             }
         }, Switch() {
-            private final Random random = new Random();
+            final Random random = new Random();
 
             @Override
             public Vec3d createOutOfBounds(Vec3d vec3d, int invalid) {
@@ -335,7 +338,7 @@ public class PacketFly extends Module {
     }
 
     public static class TimeVec extends Vec3d {
-        private final long time;
+        final long time;
 
         public TimeVec(Vec3d vec3d) {
             this(vec3d.x, vec3d.y, vec3d.z, System.currentTimeMillis());

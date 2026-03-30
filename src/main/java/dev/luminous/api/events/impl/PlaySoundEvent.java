@@ -4,10 +4,13 @@ import dev.luminous.api.events.Event;
 import net.minecraft.client.sound.SoundInstance;
 
 public class PlaySoundEvent extends Event {
-    public final SoundInstance sound;
+    private static final PlaySoundEvent INSTANCE = new PlaySoundEvent();
 
-    public PlaySoundEvent(SoundInstance soundInstance) {
-        super(Stage.Pre);
-        sound = soundInstance;
+    public SoundInstance sound;
+
+    public static PlaySoundEvent get(SoundInstance sound) {
+        INSTANCE.setCancelled(false);
+        INSTANCE.sound = sound;
+        return INSTANCE;
     }
 }

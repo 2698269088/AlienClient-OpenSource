@@ -10,8 +10,6 @@ uniform float radius;
 uniform float divider;
 uniform float maxSample;
 
-uniform vec2 InSize;
-
 uniform float alpha2;
 
 uniform vec2 resolution;

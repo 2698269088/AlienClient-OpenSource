@@ -15,7 +15,6 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.spongepowered.asm.mixin.injection.callback.LocalCapture;
 
 import static dev.luminous.api.utils.Wrapper.mc;
 
@@ -24,15 +23,17 @@ public abstract class MixinDisconnectedScreen extends Screen {
     @Shadow
     @Final
     private DirectionalLayoutWidget grid;
-    @Unique private ButtonWidget reconnectBtn;
-    @Unique private double time = AutoReconnect.INSTANCE.delay.getValue() * 20;
+    @Unique
+    private ButtonWidget reconnectBtn;
+    @Unique
+    private double time = AutoReconnect.INSTANCE.delay.getValue() * 20;
 
     protected MixinDisconnectedScreen(Text title) {
         super(title);
     }
 
-    @Inject(method = "init", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/widget/DirectionalLayoutWidget;refreshPositions()V", shift = At.Shift.BEFORE), locals = LocalCapture.CAPTURE_FAILHARD)
-    private void addButtons(CallbackInfo ci, ButtonWidget buttonWidget) {
+    @Inject(method = "init", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/widget/DirectionalLayoutWidget;refreshPositions()V", shift = At.Shift.BEFORE))
+    private void addButtons(CallbackInfo ci) {
         if (AutoReconnect.INSTANCE.lastServerConnection != null) {
             reconnectBtn = new ButtonWidget.Builder(Text.literal(getText()), button -> tryConnecting()).build();
             grid.add(reconnectBtn);
@@ -61,6 +62,6 @@ public abstract class MixinDisconnectedScreen extends Screen {
     @Unique
     private void tryConnecting() {
         var lastServer = AutoReconnect.INSTANCE.lastServerConnection;
-        ConnectScreen.connect(new TitleScreen(), mc, lastServer.left(), lastServer.right(), false);
+        ConnectScreen.connect(new TitleScreen(), mc, lastServer.left(), lastServer.right(), false, null);
     }
 }

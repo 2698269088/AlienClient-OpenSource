@@ -1,25 +1,21 @@
 package dev.luminous.mod.modules.impl.movement;
 
+import dev.luminous.api.events.eventbus.EventListener;
+import dev.luminous.api.events.impl.UpdateEvent;
 import dev.luminous.mod.modules.Module;
 import dev.luminous.mod.modules.settings.impl.EnumSetting;
 import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
 
 public class VClip extends Module {
+    private final EnumSetting<Mode> mode = add(new EnumSetting<>("Mode", Mode.Jump));
+
     public VClip() {
         super("VClip", Category.Movement);
         setChinese("纵向穿墙");
     }
 
-    final EnumSetting<Mode> mode = add(new EnumSetting<>("Mode", Mode.Jump));
-
-    public enum Mode {
-        Glitch,
-        Teleport,
-        Jump
-    }
-
-    @Override
-    public void onUpdate() {
+    @EventListener
+    public void onUpdate(UpdateEvent event) {
         disable();
         switch (mode.getValue()) {
             case Teleport -> {
@@ -61,5 +57,11 @@ public class VClip extends Module {
                         onGround));
             }
         }
+    }
+
+    public enum Mode {
+        Glitch,
+        Teleport,
+        Jump
     }
 }

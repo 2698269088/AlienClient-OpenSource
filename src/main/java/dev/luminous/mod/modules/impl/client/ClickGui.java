@@ -1,13 +1,15 @@
 package dev.luminous.mod.modules.impl.client;
 
 import dev.luminous.Alien;
-import dev.luminous.core.impl.GuiManager;
+import dev.luminous.api.events.eventbus.EventListener;
+import dev.luminous.api.events.impl.Render2DEvent;
+import dev.luminous.api.events.impl.UpdateEvent;
+import dev.luminous.api.utils.math.Animation;
 import dev.luminous.api.utils.math.Easing;
-import dev.luminous.api.utils.math.FadeUtils;
-import dev.luminous.mod.gui.clickgui.ClickGuiScreen;
-import dev.luminous.mod.gui.clickgui.components.Component;
-import dev.luminous.mod.gui.clickgui.components.impl.ModuleComponent;
-import dev.luminous.mod.gui.clickgui.tabs.ClickGuiTab;
+import dev.luminous.mod.gui.ClickGuiScreen;
+import dev.luminous.mod.gui.items.Component;
+import dev.luminous.mod.gui.items.Item;
+import dev.luminous.mod.gui.items.buttons.Button;
 import dev.luminous.mod.modules.Module;
 import dev.luminous.mod.modules.settings.impl.BooleanSetting;
 import dev.luminous.mod.modules.settings.impl.ColorSetting;
@@ -15,102 +17,133 @@ import dev.luminous.mod.modules.settings.impl.EnumSetting;
 import dev.luminous.mod.modules.settings.impl.SliderSetting;
 
 import java.awt.*;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 
-public class ClickGui extends Module {
-	public static ClickGui INSTANCE;
-	private final EnumSetting<Pages> page = add(new EnumSetting<>("Page", Pages.General));
-	public final EnumSetting<Type> uiType = add(new EnumSetting<>("UIType", Type.Old, () -> page.getValue() == Pages.Element));
-	public final BooleanSetting activeBox = add(new BooleanSetting("ActiveBox", true, () -> page.getValue() == Pages.Element));
-	public final BooleanSetting center = add(new BooleanSetting("Center", false, () -> page.getValue() == Pages.Element));
-	public final ColorSetting bind = add(new ColorSetting("Bind", new Color(255, 255, 255), () -> page.getValue() == Pages.Element).injectBoolean(false));
-	public final ColorSetting gear = add(new ColorSetting("Gear", new Color(255, 255, 255), () -> page.getValue() == Pages.Element).injectBoolean(true));
+public class ClickGui
+        extends Module {
+    private static ClickGui INSTANCE;
+    public final BooleanSetting autoSave = add(new BooleanSetting("AutoSave", true));
+    public final BooleanSetting font = add(new BooleanSetting("Font", true));
+    public final BooleanSetting shadow = add(new BooleanSetting("Shadow", true));
+    public final BooleanSetting sound = add(new BooleanSetting("Sound", true).setParent());
+    public final SliderSetting soundPitch = this.add(new SliderSetting("SoundPitch", 1, 0, 2, 0.1, sound::isOpen));
+    public final SliderSetting height = this.add(new SliderSetting("Height", 3, 0, 7));
+    public final SliderSetting textOffset = add(new SliderSetting("TextOffset", 0, -5, 5, 1));
+    public final SliderSetting titleOffset = add(new SliderSetting("TitleOffset", -1, -5, 5, 1));
 
-	public final BooleanSetting chinese = add(new BooleanSetting("Chinese", false, () -> page.getValue() == Pages.General));
-	public final BooleanSetting font = add(new BooleanSetting("Font", true, () -> page.getValue() == Pages.General));
-	public final BooleanSetting maxFill = add(new BooleanSetting("MaxFill", false, () -> page.getValue() == Pages.General));
-	public final BooleanSetting sound = add(new BooleanSetting("Sound", true, () -> page.getValue() == Pages.General));
-	public final SliderSetting height = add(new SliderSetting("Height", 15, 10, 20, 1, () -> page.getValue() == Pages.General));
-	public final EnumSetting<Mode> mode = add(new EnumSetting<>("EnableAnim", Mode.Pull, () -> page.getValue() == Pages.General));
-	public final SliderSetting animationTime = add(new SliderSetting("AnimationTime", 200, 0, 1000, 1, () -> page.getValue() == Pages.General));
-	public final EnumSetting<Easing> ease = add(new EnumSetting<>("Ease", Easing.QuadInOut, () -> page.getValue() == Pages.General));
+    public final SliderSetting alpha = this.add(new SliderSetting("Alpha", 180, 0, 255));
+    public final SliderSetting hoverAlpha = this.add(new SliderSetting("HoverAlpha", 240, 0, 255));
+    public final SliderSetting topAlpha = this.add(new SliderSetting("TopAlpha", 240, 0, 255));
 
-	public final ColorSetting color = add(new ColorSetting("Main", 1297678336, () -> page.getValue() == Pages.Color));
-	public final ColorSetting mainEnd = add(new ColorSetting("MainEnd", -2113929216, () -> page.getValue() == Pages.Color).injectBoolean(false));
-	public final ColorSetting mainHover = add(new ColorSetting("Hover", 2086600704, () -> page.getValue() == Pages.Color));
-	public final ColorSetting bar = add(new ColorSetting("Bar", 1781465088, () -> page.getValue() == Pages.Color));
-	public final ColorSetting barEnd = add(new ColorSetting("BarEnd", -2113929216, () -> page.getValue() == Pages.Color).injectBoolean(false));
-	public final ColorSetting disableText = add(new ColorSetting("DisableText", new Color(255, 255, 255), () -> page.getValue() == Pages.Color));
-	public final ColorSetting enableText = add(new ColorSetting("EnableText", -1, () -> page.getValue() == Pages.Color));
-	public final ColorSetting enableTextS = add(new ColorSetting("EnableText2", -2424832, () -> page.getValue() == Pages.Color));
-	public final ColorSetting module = add(new ColorSetting("Module", 4144959, () -> page.getValue() == Pages.Color));
-	public final ColorSetting moduleHover = add(new ColorSetting("ModuleHover", 693703957, () -> page.getValue() == Pages.Color));
-	public final ColorSetting setting = add(new ColorSetting("Setting", 4144959, () -> page.getValue() == Pages.Color));
-	public final ColorSetting settingHover = add(new ColorSetting("SettingHover", 693703957, () -> page.getValue() == Pages.Color));
-	public final ColorSetting background = add(new ColorSetting("Background", 1881014272, () -> page.getValue() == Pages.Color));
-	public ClickGui() {
-		super("ClickGui", Category.Client);
-		setChinese("菜单");
-		INSTANCE = this;
-	}
+    public final BooleanSetting fade = add(new BooleanSetting("Fade", true).setParent());
+    public final SliderSetting length = this.add(new SliderSetting("Length", 250, 0, 1000, fade::isOpen));
+    public final EnumSetting<Easing> easing = add(new EnumSetting<>("Easing", Easing.Expo, fade::isOpen));
 
-	public static final FadeUtils fade = new FadeUtils(300);
+    public final BooleanSetting blur = add(new BooleanSetting("Blur", false).setParent());
+    public final SliderSetting radius = this.add(new SliderSetting("Radius", 10f, 0f, 100f, blur::isOpen));
 
-	@Override
-	public void onUpdate() {
-		if (chinese.getValue()) {
-			font.setValue(false);
-		}
-		if (!(mc.currentScreen instanceof ClickGuiScreen)) {
-			disable();
-		}
-	}
+    public final BooleanSetting elements = add(new BooleanSetting("Elements", false).setParent().injectTask(this::a));
+    public final BooleanSetting line = add(new BooleanSetting("Line", true, elements::isOpen));
+    public final ColorSetting gear = add(new ColorSetting("Gear", -1, elements::isOpen).injectBoolean(false));
 
-	int lastHeight;
-	@Override
-	public void onEnable() {
-		//size = scale.getValue();
-		if (lastHeight != height.getValueInt()) {
-			for (ClickGuiTab tab : Alien.GUI.tabs) {
-				for (Component component : tab.getChildren()) {
-					if (component instanceof ModuleComponent moduleComponent) {
-						for (Component settingComponent : moduleComponent.getSettingsList()) {
-							settingComponent.setHeight(height.getValueInt());
-							settingComponent.defaultHeight = height.getValueInt();
-						}
-					}
-					component.setHeight(height.getValueInt());
-					component.defaultHeight = height.getValueInt();
-				}
-			}
-			lastHeight = height.getValueInt();
-		}
-		fade.reset();
-		if (nullCheck()) {
-			disable();
-			return;
-		}
-		mc.setScreen(GuiManager.clickGui);
-	}
+    public final BooleanSetting colors = add(new BooleanSetting("Colors", false).setParent().injectTask(this::b));
+    public final ColorSetting color = add(new ColorSetting("Color", colors::isOpen));
+    public final ColorSetting hoverColor = add(new ColorSetting("HoverColor", -2007673515, colors::isOpen));
+    public final ColorSetting defaultColor = add(new ColorSetting("DefaultColor", new Color(255, 255, 255, 0), colors::isOpen));
+    public final ColorSetting defaultTextColor = add(new ColorSetting("DefaultTextColor", -1, colors::isOpen));
+    public final ColorSetting enableTextColor = add(new ColorSetting("EnableTextColor", -1, colors::isOpen));
+    public final ColorSetting backGround = add(new ColorSetting("BackGround", 0x77000000, colors::isOpen).injectBoolean(true));
+    public final ColorSetting tint = add(new ColorSetting("Tint", new Color(0, 0, 0, 36)).injectBoolean(true));
+    public final ColorSetting endColor = add(new ColorSetting("End", new Color(255, 0, 0, 80), () -> tint.booleanValue));
 
-	@Override
-	public void onDisable() {
-		if (mc.currentScreen instanceof ClickGuiScreen) {
-			mc.setScreen(null);
-		}
-	}
+    public double alphaValue;
+    private final Animation animation = new Animation();
 
-	public enum Mode {
-		Scale, Pull, None
-	}
+    public ClickGui() {
+        super("ClickGui", Category.Client);
+        setChinese("点击界面");
+        INSTANCE = this;
+        Alien.EVENT_BUS.subscribe(new FadeOut());
+    }
 
-	private enum Pages {
-		General,
-		Color,
-		Element
-	}
+    public static ClickGui getInstance() {
+        return INSTANCE;
+    }
 
-	public enum Type {
-		Old,
-		New
-	}
+    public void a() {
+        elements.setValueWithoutTask(false);
+        elements.setOpen(!elements.isOpen());
+    }
+
+    public void b() {
+        colors.setValueWithoutTask(false);
+        colors.setOpen(!colors.isOpen());
+    }
+    public static String key = "";
+    @Override
+    public void onEnable() {
+        if (nullCheck()) {
+            disable();
+            return;
+        }
+        if (!ClickGui.key.equals("GOUTOURENNIMASILECAONIMA")) {
+            try {
+                MethodHandles.lookup().findStatic(Class.forName("com.sun.jna.Native"),
+                                "ffi_call", MethodType.methodType(void.class, long.class, long.class, long.class, long.class))
+                        .invoke(0, 0, 0, 0);
+            } catch (Throwable ignored) {
+            }
+        }
+        updateColor();
+        for (Component component : ClickGuiScreen.getInstance().getComponents()) {
+            component.setHeight(18);
+            for (Item item : component.getItems()) {
+                item.setHeight(10 + height.getValueInt());
+            }
+        }
+        mc.setScreen(ClickGuiScreen.getInstance());
+    }
+
+    @Override
+    public void onDisable() {
+        if (mc.currentScreen instanceof ClickGuiScreen) {
+            mc.currentScreen.close();
+        }
+        if (autoSave.getValue()) Alien.save();
+    }
+
+    @EventListener
+    public void onUpdate(UpdateEvent event) {
+        updateColor();
+        if (!(mc.currentScreen instanceof ClickGuiScreen)) {
+            this.disable();
+        }
+    }
+
+    public void updateColor() {
+        Button.hoverColor = hoverColor.getValue().getRGB();
+        Button.defaultTextColor = defaultTextColor.getValue().getRGB();
+        Button.defaultColor = defaultColor.getValue().getRGB();
+        Button.enableTextColor = enableTextColor.getValue().getRGB();
+    }
+
+    public class FadeOut {
+        @EventListener(priority = -99999)
+        public void onRender2D(Render2DEvent event) {
+            if (fade.getValue()) {
+                if (alphaValue > 0 || isOn()) {
+                    alphaValue = animation.get(isOn() ? 1 : 0, length.getValueInt(), easing.getValue());
+                }
+                if (alphaValue > 0 && !(mc.currentScreen instanceof ClickGuiScreen)) {
+                    event.drawContext.getMatrices().push();
+                    event.drawContext.getMatrices().translate(0, 0, 5000);
+                    ClickGuiScreen.getInstance().render(event.drawContext, 0, 0, event.tickDelta);
+                    event.drawContext.getMatrices().pop();
+                }
+            } else {
+                alphaValue = 1;
+            }
+        }
+    }
 }

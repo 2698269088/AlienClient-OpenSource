@@ -1,17 +1,20 @@
 package dev.luminous.api.events.impl;
 
-import dev.luminous.api.events.Event;
 import net.minecraft.entity.player.PlayerEntity;
 
-public class TotemEvent extends Event {
-    private final PlayerEntity player;
+public class TotemEvent {
+    private TotemEvent() {
+    }
 
-    public TotemEvent(PlayerEntity player) {
-        super(Stage.Post);
-        this.player = player;
+    private static final TotemEvent INSTANCE = new TotemEvent();
+    private PlayerEntity player;
+
+    public static TotemEvent get(PlayerEntity player) {
+        INSTANCE.player = player;
+        return INSTANCE;
     }
 
     public PlayerEntity getPlayer() {
-        return this.player;
+        return player;
     }
 }

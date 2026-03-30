@@ -4,14 +4,19 @@ import dev.luminous.api.events.Event;
 import net.minecraft.entity.projectile.FireworkRocketEntity;
 
 public class RemoveFireworkEvent extends Event {
-    private final FireworkRocketEntity rocketEntity;
+    private RemoveFireworkEvent() {
+    }
 
-    public RemoveFireworkEvent(FireworkRocketEntity rocketEntity) {
-        super(Stage.Pre);
-        this.rocketEntity = rocketEntity;
+    public static final RemoveFireworkEvent instance = new RemoveFireworkEvent();
+    private FireworkRocketEntity entity;
+
+    public static RemoveFireworkEvent get(FireworkRocketEntity entity) {
+        instance.entity = entity;
+        instance.setCancelled(false);
+        return instance;
     }
 
     public FireworkRocketEntity getRocketEntity() {
-        return rocketEntity;
+        return entity;
     }
 }

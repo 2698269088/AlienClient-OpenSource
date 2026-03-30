@@ -1,7 +1,7 @@
 package dev.luminous.asm.mixins;
 
-import dev.luminous.mod.modules.impl.movement.FastWeb;
 import dev.luminous.api.utils.Wrapper;
+import dev.luminous.mod.modules.impl.movement.FastWeb;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.CobwebBlock;
 import net.minecraft.entity.Entity;
