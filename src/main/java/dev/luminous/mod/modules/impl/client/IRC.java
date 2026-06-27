@@ -1,5 +1,19 @@
 package dev.luminous.mod.modules.impl.client;
 
+// 已注释：IRC远程通信模块（后门风险）
+// 原服务器地址: 47.121.113.160:6667
+// 功能：将游戏聊天以!开头的消息转发到远程IRC服务器，并接收服务器消息
+
+// 占位类，防止编译错误
+import dev.luminous.mod.modules.Module;
+
+public class IRC extends Module {
+    public IRC() {
+        super("IRC", Category.Client);
+    }
+}
+
+/*
 import dev.luminous.Alien;
 import dev.luminous.api.events.eventbus.EventListener;
 import dev.luminous.api.events.impl.PacketEvent;
@@ -119,3 +133,4 @@ public class IRC extends Module {
         });
     }
 }
+*/
