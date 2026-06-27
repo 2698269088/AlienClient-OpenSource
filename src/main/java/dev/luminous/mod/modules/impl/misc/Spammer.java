@@ -13,10 +13,10 @@ import java.util.*;
 
 public class Spammer extends Module {
 
-    private static final String CHARACTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    private static final String CHARACTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
     public final BooleanSetting checkSelf =
             add(new BooleanSetting("CheckSelf", false));
-    final StringSetting message = add(new StringSetting("Message", "最强外挂Alien社区版免费试用 群\uD835\uDFF1\uD835\uDFF4\uD835\uDFF5\uD835\uDFED\uD835\uDFF5\uD835\uDFED\uD835\uDFF1\uD835\uDFF2\uD835\uDFED"));
+    final StringSetting message = add(new StringSetting("Message", "最强外挂Alien v4已开源！GitHub搜索AlienClient-OpenSource"));
     private final Random random = new Random();
     private final SliderSetting randoms =
             add(new SliderSetting("Random", 3, 0, 20, 1));
